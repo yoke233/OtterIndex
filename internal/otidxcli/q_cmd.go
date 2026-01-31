@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"otterindex/internal/core/query"
+	"otterindex/internal/index/sqlite"
 )
 
 func newQCommand() *cobra.Command {
@@ -20,9 +21,19 @@ func newQCommand() *cobra.Command {
 				return nil
 			}
 
+			maybePrintViz(cmd)
+
 			opts := optionsFrom(cmd)
 			if opts == nil {
 				return fmt.Errorf("options missing")
+			}
+
+			hasFTS := false
+			if opts.Explain {
+				if s, err := sqlite.Open(opts.DBPath); err == nil {
+					hasFTS = s.HasFTS()
+					_ = s.Close()
+				}
 			}
 
 			cwd, err := os.Getwd()
@@ -39,6 +50,8 @@ func newQCommand() *cobra.Command {
 				return err
 			}
 
+			maybePrintExplainQuery(cmd, args[0], workspaceID, hasFTS, len(items))
+
 			var out string
 			switch {
 			case opts.Jsonl:
@@ -54,4 +67,3 @@ func newQCommand() *cobra.Command {
 		},
 	}
 }
-

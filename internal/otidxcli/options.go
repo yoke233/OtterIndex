@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,6 +33,7 @@ type Options struct {
 
 func (o *Options) Prepare() error {
 	o.normalize()
+	o.DBPath = normalizeDBPath(o.DBPath)
 
 	if strings.TrimSpace(o.DBPath) == "" {
 		return fmt.Errorf("database path is required")
@@ -164,4 +166,22 @@ func withOptionsContext(cmd *cobra.Command, opts *Options) {
 func printTodo(cmd *cobra.Command) error {
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "TODO")
 	return nil
+}
+
+func normalizeDBPath(db string) string {
+	db = strings.TrimSpace(db)
+	if db == "" {
+		return ""
+	}
+
+	// Treat values without separators as a "dbname" under .otidx.
+	// e.g. `-d foo` => `.otidx/foo.db`
+	if !strings.ContainsAny(db, "/\\") && !strings.Contains(db, ":") {
+		if !strings.HasSuffix(strings.ToLower(db), ".db") {
+			db += ".db"
+		}
+		return filepath.Join(".otidx", db)
+	}
+
+	return filepath.Clean(db)
 }
