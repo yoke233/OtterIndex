@@ -29,14 +29,3 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(newQCommand())
 	return cmd
 }
-
-func newQCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "q <q>",
-		Short: "Query (placeholder)",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return printTodo(cmd)
-		},
-	}
-}

@@ -76,6 +76,7 @@ func (o *Options) normalize() {
 }
 
 type optionsKey struct{}
+type testModeKey struct{}
 
 func optionsFrom(cmd *cobra.Command) *Options {
 	if cmd == nil {
@@ -88,6 +89,19 @@ func optionsFrom(cmd *cobra.Command) *Options {
 	v := root.Context().Value(optionsKey{})
 	opts, _ := v.(*Options)
 	return opts
+}
+
+func isTestMode(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return false
+	}
+	root := cmd.Root()
+	if root == nil {
+		root = cmd
+	}
+	v := root.Context().Value(testModeKey{})
+	ok, _ := v.(bool)
+	return ok
 }
 
 func bindFlags(cmd *cobra.Command, opts *Options) {
@@ -117,6 +131,8 @@ func ExecuteForTest(cmd *cobra.Command) (string, Options, error) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 
+	cmd.SetContext(context.WithValue(cmd.Context(), testModeKey{}, true))
+
 	err := cmd.Execute()
 
 	opts := optionsFrom(cmd)
@@ -138,7 +154,11 @@ func newDefaultOptions() *Options {
 }
 
 func withOptionsContext(cmd *cobra.Command, opts *Options) {
-	cmd.SetContext(context.WithValue(context.Background(), optionsKey{}, opts))
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd.SetContext(context.WithValue(ctx, optionsKey{}, opts))
 }
 
 func printTodo(cmd *cobra.Command) error {
