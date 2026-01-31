@@ -81,6 +81,9 @@ func (s *Server) Close() error {
 	}
 
 	s.closeOnce.Do(func() { close(s.closed) })
+	if s.h != nil {
+		_ = s.h.Close()
+	}
 
 	s.mu.Lock()
 	ln := s.listener

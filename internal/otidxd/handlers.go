@@ -1,6 +1,7 @@
 package otidxd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"otterindex/internal/core/indexer"
 	"otterindex/internal/core/query"
+	"otterindex/internal/core/watch"
 	"otterindex/internal/index/sqlite"
 	"otterindex/internal/model"
 )
@@ -26,7 +28,7 @@ type Handlers struct {
 	workspaces map[string]workspaceInfo
 	cache      *query.QueryCache
 	session    *query.SessionStore
-	watching   map[string]bool
+	watchers   map[string]*watcherEntry
 }
 
 func NewHandlers() *Handlers {
@@ -34,7 +36,7 @@ func NewHandlers() *Handlers {
 		workspaces: map[string]workspaceInfo{},
 		cache:      query.NewQueryCache(128),
 		session:    query.NewSessionStore(query.SessionOptions{TTL: 30 * time.Second}),
-		watching:   map[string]bool{},
+		watchers:   map[string]*watcherEntry{},
 	}
 }
 
@@ -160,17 +162,58 @@ func (h *Handlers) Query(p QueryParams) ([]model.ResultItem, error) {
 	return query.QueryWithCache(h.cache, ver, p.WorkspaceID, p.Q, opts, run)
 }
 
+type watcherEntry struct {
+	w      *watch.Watcher
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
 func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	if h == nil {
 		return WatchStatusResult{}, fmt.Errorf("handlers is nil")
 	}
-	if _, ok := h.getWorkspace(p.WorkspaceID); !ok {
+	ws, ok := h.getWorkspace(p.WorkspaceID)
+	if !ok {
 		return WatchStatusResult{}, fmt.Errorf("workspace not found")
 	}
 
+	wsid := strings.TrimSpace(p.WorkspaceID)
+
 	h.mu.Lock()
-	h.watching[strings.TrimSpace(p.WorkspaceID)] = true
+	if existing, ok := h.watchers[wsid]; ok && existing != nil {
+		if existing.done != nil {
+			select {
+			case <-existing.done:
+				delete(h.watchers, wsid)
+			default:
+				h.mu.Unlock()
+				return WatchStatusResult{Running: true}, nil
+			}
+		}
+	}
 	h.mu.Unlock()
+
+	w, err := watch.NewWatcher(ws.root, ws.dbPath, indexer.Options{
+		WorkspaceID:  wsid,
+		ScanAll:      p.ScanAll,
+		IncludeGlobs: p.IncludeGlobs,
+		ExcludeGlobs: p.ExcludeGlobs,
+	})
+	if err != nil {
+		return WatchStatusResult{}, err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	h.mu.Lock()
+	h.watchers[wsid] = &watcherEntry{w: w, cancel: cancel, done: done}
+	h.mu.Unlock()
+
 	return WatchStatusResult{Running: true}, nil
 }
 
@@ -182,9 +225,21 @@ func (h *Handlers) WatchStop(p WatchStopParams) (WatchStatusResult, error) {
 		return WatchStatusResult{}, fmt.Errorf("workspace not found")
 	}
 
+	wsid := strings.TrimSpace(p.WorkspaceID)
+
 	h.mu.Lock()
-	h.watching[strings.TrimSpace(p.WorkspaceID)] = false
+	entry := h.watchers[wsid]
+	delete(h.watchers, wsid)
 	h.mu.Unlock()
+
+	if entry != nil {
+		if entry.cancel != nil {
+			entry.cancel()
+		}
+		if entry.w != nil {
+			_ = entry.w.Close()
+		}
+	}
 	return WatchStatusResult{Running: false}, nil
 }
 
@@ -196,10 +251,43 @@ func (h *Handlers) WatchStatus(p WatchStatusParams) (WatchStatusResult, error) {
 		return WatchStatusResult{}, fmt.Errorf("workspace not found")
 	}
 
+	wsid := strings.TrimSpace(p.WorkspaceID)
 	h.mu.RLock()
-	running := h.watching[strings.TrimSpace(p.WorkspaceID)]
+	entry := h.watchers[wsid]
 	h.mu.RUnlock()
-	return WatchStatusResult{Running: running}, nil
+	if entry == nil || entry.done == nil {
+		return WatchStatusResult{Running: false}, nil
+	}
+	select {
+	case <-entry.done:
+		return WatchStatusResult{Running: false}, nil
+	default:
+		return WatchStatusResult{Running: true}, nil
+	}
+}
+
+func (h *Handlers) Close() error {
+	if h == nil {
+		return nil
+	}
+
+	h.mu.Lock()
+	watchers := h.watchers
+	h.watchers = map[string]*watcherEntry{}
+	h.mu.Unlock()
+
+	for _, entry := range watchers {
+		if entry == nil {
+			continue
+		}
+		if entry.cancel != nil {
+			entry.cancel()
+		}
+		if entry.w != nil {
+			_ = entry.w.Close()
+		}
+	}
+	return nil
 }
 
 func (h *Handlers) getWorkspace(workspaceID string) (workspaceInfo, bool) {
