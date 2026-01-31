@@ -18,6 +18,13 @@ func NewRootCommand() *cobra.Command {
 	withOptionsContext(cmd, opts)
 	bindFlags(cmd, opts)
 
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if opts := optionsFrom(cmd); opts != nil {
+			return opts.Prepare()
+		}
+		return nil
+	}
+
 	cmd.AddCommand(newQCommand())
 	return cmd
 }
@@ -28,9 +35,6 @@ func newQCommand() *cobra.Command {
 		Short: "Query (placeholder)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if opts := optionsFrom(cmd); opts != nil {
-				opts.normalize()
-			}
 			return printTodo(cmd)
 		},
 	}

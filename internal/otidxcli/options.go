@@ -30,6 +30,33 @@ type Options struct {
 	highContrast bool
 }
 
+func (o *Options) Prepare() error {
+	o.normalize()
+
+	if strings.TrimSpace(o.DBPath) == "" {
+		return fmt.Errorf("database path is required")
+	}
+	if o.ContextLines < 0 {
+		return fmt.Errorf("context lines must be >= 0")
+	}
+
+	switch o.Unit {
+	case "line", "block", "file":
+	default:
+		return fmt.Errorf("invalid --unit %q (expected: line|block|file)", o.Unit)
+	}
+
+	if o.Viz != "" {
+		switch o.Viz {
+		case "ascii":
+		default:
+			return fmt.Errorf("invalid --viz %q (expected: ascii)", o.Viz)
+		}
+	}
+
+	return nil
+}
+
 func (o *Options) normalize() {
 	o.Theme = "default"
 	if o.colorblind {
@@ -118,4 +145,3 @@ func printTodo(cmd *cobra.Command) error {
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "TODO")
 	return nil
 }
-
