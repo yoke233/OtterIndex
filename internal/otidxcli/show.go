@@ -27,16 +27,16 @@ func RenderShow(workspaceRoot string, items []ResultItem) string {
 
 		lines := loadFileLines(base, item.Path, fileCache)
 		if len(lines) == 0 {
-			line, col, snippet := bestVimLocationAndSnippet(item)
-			_, _ = fmt.Fprintf(&b, "%s:%d:%d (%d-%d) %s\n\n", item.Path, line, col, item.Range.SL, item.Range.EL, snippet)
+			line, col, _ := bestVimLocationAndSnippet(item)
+			_, _ = fmt.Fprintf(&b, "%s:%d:%d (%d-%d)\n\n", item.Path, line, col, item.Range.SL, item.Range.EL)
 			continue
 		}
 
 		sl := clampInt(item.Range.SL, 1, len(lines))
 		el := clampInt(item.Range.EL, sl, len(lines))
 
-		line, col, snippet := bestVimLocationAndSnippet(item)
-		_, _ = fmt.Fprintf(&b, "%s:%d:%d (%d-%d) %s\n", item.Path, line, col, sl, el, snippet)
+		line, col, _ := bestVimLocationAndSnippet(item)
+		_, _ = fmt.Fprintf(&b, "%s:%d:%d (%d-%d)\n", item.Path, line, col, sl, el)
 
 		width := len(strconv.Itoa(el))
 		matchLines := map[int]bool{}

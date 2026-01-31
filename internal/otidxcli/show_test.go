@@ -26,7 +26,7 @@ func TestRenderShow_PrintsLinesWithMatchMarker(t *testing.T) {
 		},
 	})
 
-	if !strings.Contains(out, "a/b.go:3:1 (2-4) SNIP") {
+	if !strings.Contains(out, "a/b.go:3:1 (2-4)") {
 		t.Fatalf("missing header: %s", out)
 	}
 	if !strings.Contains(out, "  2| 2") {

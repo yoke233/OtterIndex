@@ -45,7 +45,7 @@ go run ./cmd/otidx q "keyword"
 
 默认输出：**多行“单元块”**（路径为相对路径），包含：
 
-- `path:line:col (sl-el) snippet`
+- `path:line:col (sl-el)`
 - 带行号的代码/文本块（命中行用 `>` 标记）
 
 如果你想要 grep 风格的**单行列表**：加 `--compact`；想要 vim 友好：加 `-L`；想要脚本/Agent：用 `--jsonl`。
@@ -89,7 +89,7 @@ explain:
 
 ```powershell
 > .\.otidx\bin\otidx.exe q "maybePrintViz" | Select-Object -First 19
-internal/otidxcli/explain.go:10:6 (10-26) func maybePrintViz(cmd *cobra.Command) {
+internal/otidxcli/explain.go:10:6 (10-26)
 > 10| func maybePrintViz(cmd *cobra.Command) {
   11| 	if cmd == nil {
   12| 		return
