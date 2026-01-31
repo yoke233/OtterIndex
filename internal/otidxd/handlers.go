@@ -26,6 +26,7 @@ type Handlers struct {
 	workspaces map[string]workspaceInfo
 	cache      *query.QueryCache
 	session    *query.SessionStore
+	watching   map[string]bool
 }
 
 func NewHandlers() *Handlers {
@@ -33,6 +34,7 @@ func NewHandlers() *Handlers {
 		workspaces: map[string]workspaceInfo{},
 		cache:      query.NewQueryCache(128),
 		session:    query.NewSessionStore(query.SessionOptions{TTL: 30 * time.Second}),
+		watching:   map[string]bool{},
 	}
 }
 
@@ -156,6 +158,48 @@ func (h *Handlers) Query(p QueryParams) ([]model.ResultItem, error) {
 		return run()
 	}
 	return query.QueryWithCache(h.cache, ver, p.WorkspaceID, p.Q, opts, run)
+}
+
+func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
+	if h == nil {
+		return WatchStatusResult{}, fmt.Errorf("handlers is nil")
+	}
+	if _, ok := h.getWorkspace(p.WorkspaceID); !ok {
+		return WatchStatusResult{}, fmt.Errorf("workspace not found")
+	}
+
+	h.mu.Lock()
+	h.watching[strings.TrimSpace(p.WorkspaceID)] = true
+	h.mu.Unlock()
+	return WatchStatusResult{Running: true}, nil
+}
+
+func (h *Handlers) WatchStop(p WatchStopParams) (WatchStatusResult, error) {
+	if h == nil {
+		return WatchStatusResult{}, fmt.Errorf("handlers is nil")
+	}
+	if _, ok := h.getWorkspace(p.WorkspaceID); !ok {
+		return WatchStatusResult{}, fmt.Errorf("workspace not found")
+	}
+
+	h.mu.Lock()
+	h.watching[strings.TrimSpace(p.WorkspaceID)] = false
+	h.mu.Unlock()
+	return WatchStatusResult{Running: false}, nil
+}
+
+func (h *Handlers) WatchStatus(p WatchStatusParams) (WatchStatusResult, error) {
+	if h == nil {
+		return WatchStatusResult{}, fmt.Errorf("handlers is nil")
+	}
+	if _, ok := h.getWorkspace(p.WorkspaceID); !ok {
+		return WatchStatusResult{}, fmt.Errorf("workspace not found")
+	}
+
+	h.mu.RLock()
+	running := h.watching[strings.TrimSpace(p.WorkspaceID)]
+	h.mu.RUnlock()
+	return WatchStatusResult{Running: running}, nil
 }
 
 func (h *Handlers) getWorkspace(workspaceID string) (workspaceInfo, bool) {

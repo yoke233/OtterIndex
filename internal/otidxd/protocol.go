@@ -44,3 +44,22 @@ type QueryParams struct {
 	IncludeGlobs    []string `json:"include_globs,omitempty"`
 	ExcludeGlobs    []string `json:"exclude_globs,omitempty"`
 }
+
+type WatchStartParams struct {
+	WorkspaceID  string   `json:"workspace_id"`
+	ScanAll      bool     `json:"scan_all,omitempty"`
+	IncludeGlobs []string `json:"include_globs,omitempty"`
+	ExcludeGlobs []string `json:"exclude_globs,omitempty"`
+}
+
+type WatchStopParams struct {
+	WorkspaceID string `json:"workspace_id"`
+}
+
+type WatchStatusParams struct {
+	WorkspaceID string `json:"workspace_id"`
+}
+
+type WatchStatusResult struct {
+	Running bool `json:"running"`
+}

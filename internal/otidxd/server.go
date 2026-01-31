@@ -211,6 +211,60 @@ func (s *Server) dispatch(req Request) Response {
 			return resp
 		}
 		resp.Result = items
+	case "watch.start":
+		var p WatchStartParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &p); err != nil {
+				resp.Error = &ErrorObject{Code: -32602, Message: "invalid params"}
+				return resp
+			}
+		}
+		if strings.TrimSpace(p.WorkspaceID) == "" {
+			resp.Error = &ErrorObject{Code: -32602, Message: "workspace_id is required"}
+			return resp
+		}
+		st, err := s.h.WatchStart(p)
+		if err != nil {
+			resp.Error = &ErrorObject{Code: -32000, Message: err.Error()}
+			return resp
+		}
+		resp.Result = st
+	case "watch.stop":
+		var p WatchStopParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &p); err != nil {
+				resp.Error = &ErrorObject{Code: -32602, Message: "invalid params"}
+				return resp
+			}
+		}
+		if strings.TrimSpace(p.WorkspaceID) == "" {
+			resp.Error = &ErrorObject{Code: -32602, Message: "workspace_id is required"}
+			return resp
+		}
+		st, err := s.h.WatchStop(p)
+		if err != nil {
+			resp.Error = &ErrorObject{Code: -32000, Message: err.Error()}
+			return resp
+		}
+		resp.Result = st
+	case "watch.status":
+		var p WatchStatusParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &p); err != nil {
+				resp.Error = &ErrorObject{Code: -32602, Message: "invalid params"}
+				return resp
+			}
+		}
+		if strings.TrimSpace(p.WorkspaceID) == "" {
+			resp.Error = &ErrorObject{Code: -32602, Message: "workspace_id is required"}
+			return resp
+		}
+		st, err := s.h.WatchStatus(p)
+		if err != nil {
+			resp.Error = &ErrorObject{Code: -32000, Message: err.Error()}
+			return resp
+		}
+		resp.Result = st
 	default:
 		resp.Error = &ErrorObject{Code: -32601, Message: "method not found"}
 	}
