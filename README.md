@@ -3,7 +3,7 @@
 本项目提供一个 **本地** 的代码/文本索引与查询工具：
 
 - `otidx`：命令行索引/查询（索引落到本地 SQLite）
-- `otidxd`：daemon 骨架（TCP JSON-RPC：`ping`/`version`）
+- `otidxd`：daemon（TCP JSON-RPC：`ping`/`version`/`workspace.add`/`index.build`/`query`/`watch.*`）
 
 > 设计目标：根据关键词，返回“尽可能小的上下文单元块”，并带上文件相对路径 + 行号信息，方便携带上下文做进一步处理。
 
@@ -284,14 +284,34 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
 
 协议：TCP JSON-RPC 2.0，一条请求一行 JSON（服务端按 JSON 解码）。
 
-示例请求：
+方法列表：
+
+- `ping` / `version`
+- `workspace.add`（`root`，可选 `db_path`）
+- `index.build`（`workspace_id`，可选 `scan_all/include_globs/exclude_globs`），返回 `version`
+- `query`（`workspace_id/q` 必填，`unit/limit/offset/context_lines/case_insensitive/include_globs/exclude_globs/show` 可选）
+  - 默认：`unit=block`，`limit=20`，`offset=0`，`context_lines=0`，`show=false`
+  - `show=true` 会附加 `ResultItem.text`
+- `watch.start` / `watch.stop` / `watch.status`（`workspace_id` 必填，可选 `scan_all/include_globs/exclude_globs`）
+  - 返回 `{ "running": true|false }`
+
+示例请求/响应：
 
 ```json
 {"jsonrpc":"2.0","method":"ping","id":1}
 {"jsonrpc":"2.0","method":"version","id":2}
+{"jsonrpc":"2.0","method":"workspace.add","id":3,"params":{"root":"."}}
+{"jsonrpc":"2.0","method":"index.build","id":4,"params":{"workspace_id":"<wsid>"}}
+{"jsonrpc":"2.0","method":"query","id":5,"params":{"workspace_id":"<wsid>","q":"hello","unit":"block","limit":10,"offset":0,"show":true}}
 ```
 
-当前仅实现 `ping` / `version`，后续可扩展为：workspace 注册、索引构建、查询接口等。
+```json
+{"jsonrpc":"2.0","id":1,"result":"pong"}
+{"jsonrpc":"2.0","id":2,"result":"0.1.0"}
+{"jsonrpc":"2.0","id":3,"result":"<wsid>"}
+{"jsonrpc":"2.0","id":4,"result":1}
+{"jsonrpc":"2.0","id":5,"result":[{"path":"a.go","range":{"sl":1,"sc":1,"el":2,"ec":1},"snippet":"hello","text":"hello\nworld"}]}
+```
 
 ---
 
