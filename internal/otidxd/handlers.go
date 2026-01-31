@@ -100,7 +100,17 @@ func (h *Handlers) IndexBuild(p IndexBuildParams) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return true, nil
+
+	s, err := sqlite.Open(ws.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	ver, err := s.GetVersion(p.WorkspaceID)
+	_ = s.Close()
+	if err != nil {
+		return nil, err
+	}
+	return ver, nil
 }
 
 func (h *Handlers) Query(p QueryParams) ([]model.ResultItem, error) {
