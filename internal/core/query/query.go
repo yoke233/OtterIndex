@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -12,12 +13,24 @@ import (
 	"otterindex/internal/model"
 )
 
-func Query(dbPath string, workspaceID string, q string, unitMode string, contextLines int, caseInsensitive bool) ([]model.ResultItem, error) {
+type Options struct {
+	Unit            string
+	ContextLines    int
+	CaseInsensitive bool
+	IncludeGlobs    []string
+	ExcludeGlobs    []string
+	Limit           int
+}
+
+func Query(dbPath string, workspaceID string, q string, opts Options) ([]model.ResultItem, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	q = strings.TrimSpace(q)
-	unitMode = strings.TrimSpace(unitMode)
-	if unitMode == "" {
-		unitMode = "block"
+	opts.Unit = strings.TrimSpace(opts.Unit)
+	if opts.Unit == "" {
+		opts.Unit = "block"
+	}
+	if opts.Limit <= 0 {
+		opts.Limit = 50
 	}
 
 	if strings.TrimSpace(dbPath) == "" {
@@ -38,7 +51,14 @@ func Query(dbPath string, workspaceID string, q string, unitMode string, context
 
 	ws, _ := s.GetWorkspace(workspaceID)
 
-	chunks, err := s.SearchChunks(workspaceID, q, 50, caseInsensitive)
+	searchLimit := opts.Limit
+	if len(opts.IncludeGlobs) > 0 || len(opts.ExcludeGlobs) > 0 {
+		// Over-fetch a bit to keep results useful when filters are strict.
+		if searchLimit < 500 {
+			searchLimit = 500
+		}
+	}
+	chunks, err := s.SearchChunks(workspaceID, q, searchLimit, opts.CaseInsensitive)
 	if err != nil {
 		return nil, err
 	}
@@ -47,13 +67,20 @@ func Query(dbPath string, workspaceID string, q string, unitMode string, context
 
 	var out []model.ResultItem
 	for _, c := range chunks {
+		if len(opts.IncludeGlobs) > 0 && !anyGlobMatch(opts.IncludeGlobs, c.Path) {
+			continue
+		}
+		if anyGlobMatch(opts.ExcludeGlobs, c.Path) {
+			continue
+		}
+
 		item := model.ResultItem{
 			Kind:  "unit",
 			Path:  c.Path,
 			Range: model.Range{SL: c.SL, SC: 1, EL: c.EL, EC: 1},
 		}
 
-		relMatches := search.FindInText(c.Text, q, caseInsensitive)
+		relMatches := search.FindInText(c.Text, q, opts.CaseInsensitive)
 		if len(relMatches) > 0 {
 			m0 := relMatches[0]
 			m0.Line = c.SL + m0.Line - 1
@@ -61,18 +88,19 @@ func Query(dbPath string, workspaceID string, q string, unitMode string, context
 			item.Snippet = strings.TrimSpace(m0.Text)
 		}
 
-		switch unitMode {
+		switch opts.Unit {
 		case "block":
 			item.Range = model.Range{SL: c.SL, SC: 1, EL: c.EL, EC: 1}
 		case "line":
 			if len(item.Matches) == 0 {
-				item.Range = unit.LineRange(c.Text, model.Match{Line: 1, Col: 1}, contextLines)
+				item.Range = unit.LineRange(c.Text, model.Match{Line: 1, Col: 1}, opts.ContextLines)
 				item.Range.SL += c.SL - 1
 				item.Range.EL += c.SL - 1
 				break
 			}
 
 			m := item.Matches[0]
+			contextLines := opts.ContextLines
 			if contextLines < 0 {
 				contextLines = 0
 			}
@@ -108,10 +136,13 @@ func Query(dbPath string, workspaceID string, q string, unitMode string, context
 				}
 			}
 		default:
-			return nil, fmt.Errorf("invalid unit %q", unitMode)
+			return nil, fmt.Errorf("invalid unit %q", opts.Unit)
 		}
 
 		out = append(out, item)
+		if len(out) >= opts.Limit {
+			break
+		}
 	}
 
 	return out, nil
@@ -127,4 +158,41 @@ func countFileLines(path string) int {
 		parts = parts[:len(parts)-1]
 	}
 	return len(parts)
+}
+
+func anyGlobMatch(patterns []string, rel string) bool {
+	for _, pat := range patterns {
+		if matchesGlob(pat, rel) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesGlob(pattern string, rel string) bool {
+	pat := strings.TrimSpace(pattern)
+	if pat == "" {
+		return false
+	}
+	pat = strings.ReplaceAll(pat, "\\", "/")
+	rel = filepath.ToSlash(rel)
+
+	// Support csv passed via -x "*.js,*.sql" when not using StringSliceVar.
+	if strings.Contains(pat, ",") {
+		for _, piece := range strings.Split(pat, ",") {
+			if matchesGlob(strings.TrimSpace(piece), rel) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Treat patterns without path separators as basename patterns.
+	if !strings.Contains(pat, "/") {
+		ok, _ := path.Match(pat, path.Base(rel))
+		return ok
+	}
+
+	ok, _ := path.Match(pat, rel)
+	return ok
 }

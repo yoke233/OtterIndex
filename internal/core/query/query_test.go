@@ -17,7 +17,7 @@ func TestQueryReturnsRanges(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 
-	results, err := Query(dbPath, root, "hello", "block", 1, false)
+	results, err := Query(dbPath, root, "hello", Options{Unit: "block", ContextLines: 1})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -31,4 +31,3 @@ func TestQueryReturnsRanges(t *testing.T) {
 		t.Fatalf("invalid range: %+v", results[0])
 	}
 }
-

@@ -45,7 +45,13 @@ func newQCommand() *cobra.Command {
 				return err
 			}
 
-			items, err := query.Query(opts.DBPath, workspaceID, args[0], opts.Unit, opts.ContextLines, opts.CaseInsensitive)
+			items, err := query.Query(opts.DBPath, workspaceID, args[0], query.Options{
+				Unit:            opts.Unit,
+				ContextLines:    opts.ContextLines,
+				CaseInsensitive: opts.CaseInsensitive,
+				IncludeGlobs:    opts.IncludeGlobs,
+				ExcludeGlobs:    opts.ExcludeGlobs,
+			})
 			if err != nil {
 				return err
 			}
