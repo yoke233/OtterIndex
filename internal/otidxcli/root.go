@@ -25,6 +25,7 @@ func NewRootCommand() *cobra.Command {
 		return nil
 	}
 
+	cmd.AddCommand(newIndexCommand())
 	cmd.AddCommand(newQCommand())
 	return cmd
 }
