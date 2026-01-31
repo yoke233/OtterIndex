@@ -1,6 +1,7 @@
 package otidxd
 
 import (
+	"bufio"
 	"encoding/json"
 	"net"
 	"testing"
@@ -20,15 +21,23 @@ func TestServerPingAndVersion(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	dec := json.NewDecoder(conn)
-	enc := json.NewEncoder(conn)
+	r := bufio.NewReader(conn)
+	w := bufio.NewWriter(conn)
+	t.Cleanup(func() { _ = w.Flush() })
 
-	if err := enc.Encode(Request{JSONRPC: "2.0", Method: "ping", ID: json.RawMessage("1")}); err != nil {
-		t.Fatalf("encode ping: %v", err)
+	if err := WriteOneLine(w, Request{JSONRPC: "2.0", Method: "ping", ID: json.RawMessage("1")}); err != nil {
+		t.Fatalf("write ping: %v", err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatalf("flush ping: %v", err)
 	}
 	var pingResp Response
-	if err := dec.Decode(&pingResp); err != nil {
-		t.Fatalf("decode ping: %v", err)
+	line, err := ReadOneLine(r)
+	if err != nil {
+		t.Fatalf("read ping: %v", err)
+	}
+	if err := json.Unmarshal(line, &pingResp); err != nil {
+		t.Fatalf("unmarshal ping: %v", err)
 	}
 	if string(pingResp.ID) != "1" {
 		t.Fatalf("ping id=%s", string(pingResp.ID))
@@ -40,12 +49,19 @@ func TestServerPingAndVersion(t *testing.T) {
 		t.Fatalf("ping result=%v", pingResp.Result)
 	}
 
-	if err := enc.Encode(Request{JSONRPC: "2.0", Method: "version", ID: json.RawMessage("2")}); err != nil {
-		t.Fatalf("encode version: %v", err)
+	if err := WriteOneLine(w, Request{JSONRPC: "2.0", Method: "version", ID: json.RawMessage("2")}); err != nil {
+		t.Fatalf("write version: %v", err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatalf("flush version: %v", err)
 	}
 	var versionResp Response
-	if err := dec.Decode(&versionResp); err != nil {
-		t.Fatalf("decode version: %v", err)
+	line, err = ReadOneLine(r)
+	if err != nil {
+		t.Fatalf("read version: %v", err)
+	}
+	if err := json.Unmarshal(line, &versionResp); err != nil {
+		t.Fatalf("unmarshal version: %v", err)
 	}
 	if string(versionResp.ID) != "2" {
 		t.Fatalf("version id=%s", string(versionResp.ID))

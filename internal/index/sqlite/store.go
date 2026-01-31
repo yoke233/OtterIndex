@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ var schemaSQL string
 type Store struct {
 	db     *sql.DB
 	hasFTS bool
+	ftsErr error
 }
 
 type File struct {
@@ -35,6 +37,7 @@ type Chunk struct {
 	Kind        string
 	Title       string
 	Text        string
+	Snippet     string
 	WorkspaceID string
 }
 
@@ -57,6 +60,8 @@ func Open(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	s := &Store{db: db}
 	if err := s.init(); err != nil {
@@ -75,6 +80,62 @@ func (s *Store) Close() error {
 
 func (s *Store) HasFTS() bool { return s != nil && s.hasFTS }
 
+func (s *Store) FTSReason() string {
+	if s == nil {
+		return ""
+	}
+	if s.hasFTS {
+		return "enabled"
+	}
+	if s.ftsErr != nil {
+		return s.ftsErr.Error()
+	}
+	return "fts5 not available"
+}
+
+func (s *Store) GetVersion(workspaceID string) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return 0, fmt.Errorf("workspaceID is required")
+	}
+	if err := s.ensureWorkspace(workspaceID, ""); err != nil {
+		return 0, err
+	}
+
+	var v int64
+	if err := s.db.QueryRow(`SELECT version FROM meta WHERE workspace_id = ?`, workspaceID).Scan(&v); err != nil {
+		return 0, err
+	}
+	return v, nil
+}
+
+func (s *Store) BumpVersion(workspaceID string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return fmt.Errorf("workspaceID is required")
+	}
+	if err := s.ensureWorkspace(workspaceID, ""); err != nil {
+		return err
+	}
+
+	_, err := s.db.Exec(
+		`INSERT INTO meta(workspace_id, version, updated_at)
+		 VALUES(?, 1, ?)
+		 ON CONFLICT(workspace_id) DO UPDATE SET
+		   version = version + 1,
+		   updated_at = excluded.updated_at`,
+		workspaceID,
+		time.Now().Unix(),
+	)
+	return err
+}
+
 func (s *Store) EnsureWorkspace(id string, root string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("store is not open")
@@ -82,12 +143,13 @@ func (s *Store) EnsureWorkspace(id string, root string) error {
 	return s.ensureWorkspace(id, root)
 }
 
-func (s *Store) UpsertFile(workspaceID string, path string, size int64, mtime int64) error {
+func (s *Store) UpsertFile(workspaceID string, path string, size int64, mtime int64, hash string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("store is not open")
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	path = filepath.ToSlash(path)
+	hash = strings.TrimSpace(hash)
 	if workspaceID == "" {
 		return fmt.Errorf("workspaceID is required")
 	}
@@ -110,7 +172,7 @@ func (s *Store) UpsertFile(workspaceID string, path string, size int64, mtime in
 		path,
 		size,
 		mtime,
-		"",
+		hash,
 	)
 	return err
 }
@@ -142,6 +204,34 @@ func (s *Store) GetFile(workspaceID string, path string) (File, error) {
 		return File{}, err
 	}
 	return f, nil
+}
+
+func (s *Store) GetFileMeta(workspaceID string, path string) (File, bool, error) {
+	f, err := s.GetFile(workspaceID, path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return File{}, false, nil
+	}
+	if err != nil {
+		return File{}, false, err
+	}
+	return f, true, nil
+}
+
+func (s *Store) DeleteFile(workspaceID string, path string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	path = filepath.ToSlash(path)
+	if workspaceID == "" {
+		return fmt.Errorf("workspaceID is required")
+	}
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("path is required")
+	}
+
+	_, err := s.db.Exec(`DELETE FROM files WHERE workspace_id = ? AND path = ?`, workspaceID, path)
+	return err
 }
 
 func (s *Store) GetWorkspace(workspaceID string) (Workspace, error) {
@@ -185,25 +275,68 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 	var rows *sql.Rows
 	var err error
 	if s.hasFTS {
+		includeSnippet := true
 		rows, err = s.db.Query(
-			`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text
-			 FROM chunks_fts f
-			 JOIN chunks c ON c.id = f.rowid
+			`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text,
+			        snippet(chunks_fts, 0, '<<', '>>', '…', 16) AS snip
+			 FROM chunks_fts
+			 JOIN chunks c ON c.id = chunks_fts.rowid
 			 WHERE chunks_fts MATCH ? AND c.workspace_id = ?
+			 ORDER BY c.path, c.sl, c.el
 			 LIMIT ?`,
 			keyword,
 			workspaceID,
 			limit,
 		)
+		if err != nil {
+			includeSnippet = false
+			rows, err = s.db.Query(
+				`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text
+				 FROM chunks_fts
+				 JOIN chunks c ON c.id = chunks_fts.rowid
+				 WHERE chunks_fts MATCH ? AND c.workspace_id = ?
+				 ORDER BY c.path, c.sl, c.el
+				 LIMIT ?`,
+				keyword,
+				workspaceID,
+				limit,
+			)
+		}
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var out []Chunk
+		for rows.Next() {
+			var c Chunk
+			c.WorkspaceID = workspaceID
+			if includeSnippet {
+				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text, &c.Snippet); err != nil {
+					return nil, err
+				}
+			} else {
+				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
+					return nil, err
+				}
+			}
+			out = append(out, c)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return out, nil
 	} else {
 		query := `SELECT path, sl, el, kind, title, text
 		          FROM chunks
 		          WHERE workspace_id = ? AND text LIKE '%' || ? || '%'
+		          ORDER BY path, sl, el
 		          LIMIT ?`
 		if caseInsensitive {
 			query = `SELECT path, sl, el, kind, title, text
 			         FROM chunks
 			         WHERE workspace_id = ? AND LOWER(text) LIKE '%' || LOWER(?) || '%'
+			         ORDER BY path, sl, el
 			         LIMIT ?`
 		}
 		rows, err = s.db.Query(query, workspaceID, keyword, limit)
@@ -241,46 +374,11 @@ func (s *Store) ReplaceChunks(workspaceID string, path string, chunks []Chunk) e
 		return fmt.Errorf("path is required")
 	}
 
-	if err := s.ensureWorkspace(workspaceID, ""); err != nil {
-		return err
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.Exec(`DELETE FROM chunks WHERE workspace_id = ? AND path = ?`, workspaceID, path); err != nil {
-		return err
-	}
-
+	var in []ChunkInput
 	for _, c := range chunks {
-		kind := strings.TrimSpace(c.Kind)
-		if kind == "" {
-			kind = "chunk"
-		}
-		title := c.Title
-		text := c.Text
-		if _, err := tx.Exec(
-			`INSERT INTO chunks (workspace_id, path, sl, el, kind, title, text)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			workspaceID,
-			path,
-			c.SL,
-			c.EL,
-			kind,
-			title,
-			text,
-		); err != nil {
-			return err
-		}
+		in = append(in, ChunkInput{SL: c.SL, EL: c.EL, Kind: c.Kind, Title: c.Title, Text: c.Text})
 	}
-
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return nil
+	return s.ReplaceChunksBatch(workspaceID, path, in)
 }
 
 func (s *Store) CountChunks(workspaceID string) (int, error) {
@@ -293,6 +391,21 @@ func (s *Store) CountChunks(workspaceID string) (int, error) {
 	}
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM chunks WHERE workspace_id = ?`, workspaceID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (s *Store) CountFiles(workspaceID string) (int, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return 0, fmt.Errorf("workspaceID is required")
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM files WHERE workspace_id = ?`, workspaceID).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -314,6 +427,7 @@ func (s *Store) init() error {
 	s.hasFTS = true
 	if err := s.tryCreateFTS(); err != nil {
 		s.hasFTS = false
+		s.ftsErr = err
 	}
 
 	return nil
@@ -361,13 +475,25 @@ func (s *Store) ensureWorkspace(id string, root string) error {
 		return fmt.Errorf("workspace id is required")
 	}
 
+	now := time.Now().Unix()
 	_, err := s.db.Exec(
 		`INSERT INTO workspaces (id, root, created_at)
 		 VALUES (?, ?, ?)
-		 ON CONFLICT(id) DO NOTHING`,
+		 ON CONFLICT(id) DO UPDATE SET root = COALESCE(NULLIF(excluded.root, ''), workspaces.root)`,
 		id,
 		root,
-		time.Now().Unix(),
+		now,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(
+		`INSERT INTO meta(workspace_id, version, updated_at)
+		 VALUES (?, 1, ?)
+		 ON CONFLICT(workspace_id) DO NOTHING`,
+		id,
+		now,
 	)
 	return err
 }

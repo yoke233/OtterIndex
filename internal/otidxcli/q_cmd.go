@@ -39,13 +39,9 @@ func newQCommand() *cobra.Command {
 
 			defaultShow := !opts.Jsonl && !opts.VimLines && !opts.Compact
 			wantWorkspaceRoot := opts.Show || defaultShow
-			wantStoreInfo := opts.Explain || wantWorkspaceRoot
-
-			hasFTS := false
 			workspaceRoot := ""
-			if wantStoreInfo {
+			if wantWorkspaceRoot {
 				if s, err := sqlite.Open(opts.DBPath); err == nil {
-					hasFTS = s.HasFTS()
 					if ws, err := s.GetWorkspace(workspaceID); err == nil {
 						workspaceRoot = ws.Root
 					}
@@ -53,18 +49,49 @@ func newQCommand() *cobra.Command {
 				}
 			}
 
-			items, err := query.Query(opts.DBPath, workspaceID, args[0], query.Options{
+			var ex *ExplainCollector
+			if opts.Explain != "" {
+				ex = NewExplainCollector(ExplainOptions{Format: opts.Explain})
+			}
+
+			qopts := query.Options{
 				Unit:            opts.Unit,
 				ContextLines:    opts.ContextLines,
 				CaseInsensitive: opts.CaseInsensitive,
 				IncludeGlobs:    opts.IncludeGlobs,
 				ExcludeGlobs:    opts.ExcludeGlobs,
-			})
+				Limit:           opts.Limit,
+				Offset:          opts.Offset,
+				Explain:         ex,
+			}
+
+			var items []ResultItem
+			if opts.Cache {
+				cache := query.NewQueryCache(opts.CacheSize)
+
+				s, err := sqlite.Open(opts.DBPath)
+				if err != nil {
+					return err
+				}
+				ver, err := s.GetVersion(workspaceID)
+				_ = s.Close()
+				if err != nil {
+					return err
+				}
+
+				items, err = query.QueryWithCache(cache, ver, workspaceID, args[0], qopts, func() ([]ResultItem, error) {
+					return query.Query(opts.DBPath, workspaceID, args[0], qopts)
+				})
+			} else {
+				items, err = query.Query(opts.DBPath, workspaceID, args[0], qopts)
+			}
 			if err != nil {
 				return err
 			}
 
-			maybePrintExplainQuery(cmd, args[0], workspaceID, hasFTS, len(items))
+			if ex != nil {
+				_ = ex.Emit(cmd.ErrOrStderr())
+			}
 
 			var out string
 			if wantWorkspaceRoot && workspaceRoot == "" {

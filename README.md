@@ -162,6 +162,25 @@ Get-Content -LiteralPath .\internal\otidxcli\explain.go |
 - 构建索引：约 `227ms`（`otidx index build .`）
 - 执行一次查询：约 `84ms`（`otidx q "maybePrintViz"`）
 
+### 性能对比（otidx vs rg）
+
+> 说明：下面图表来自 `bench/bench-vs-rg.ps1` 的输出，按多个 query case 做 **otidx（索引查询）** vs **rg（直接扫文件）** 的耗时对比（毫秒，越低越快）。结果会随机器/磁盘/仓库规模变化。
+
+![otidx vs rg benchmark](bench/docs/bench-vs-rg.svg)
+
+生成/更新方式（在仓库根目录）：
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-vs-rg.ps1 -Rebuild -Limit 20 -Repeat 3
+python .\bench\plot_bench_svg.py --out .\bench\docs\bench-vs-rg.svg
+```
+
+外部项目（Java/Vue/Python/C++）对比见：`bench/docs/external-projects.md`（会生成对应 SVG：`bench/docs/external-projects-vs-rg.svg`）。
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-external-projects.ps1 -Limit 20 -Repeat 3
+```
+
 ## 常用参数（对齐 mgrep 风格）
 
 ### 数据库
@@ -254,5 +273,5 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
 ## 说明与限制（MVP）
 
 - 需要先 `otidx index build` 生成 SQLite 索引；目前不做增量更新/监听，文件变更后建议重建索引。
-- SQLite FTS5 **可用则用**，不可用会自动回退到 `LIKE`（速度较慢但可用）。
-- “最小代码单元块”当前以 `--unit` 控制（`line/block/file`）；`symbol`（tree-sitter）预留在后续阶段实现。
+- SQLite FTS5 **默认尝试启用**；如果当前 SQLite 构建不支持 FTS5（或创建虚表失败）会自动回退到 `LIKE`（速度较慢但可用，可用 `--explain` 查看 `fts5/fts5_reason`）。
+- “最小代码单元块”用 `--unit` 控制（`line/block/file/symbol`）；`symbol` 目前仅 **Go（tree-sitter）** 真正可用，其他语言会自动降级为 `block`（`--explain` 里会标注 `symbol_fallback` / `unit_fallback`）。

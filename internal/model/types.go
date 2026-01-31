@@ -22,3 +22,21 @@ type ResultItem struct {
 	Text    string  `json:"text,omitempty"`
 	Matches []Match `json:"matches,omitempty"`
 }
+
+type SymbolItem struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name,omitempty"`
+	Container string `json:"container,omitempty"`
+	Lang      string `json:"lang,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Path      string `json:"path"`
+	Range     Range  `json:"range"`
+}
+
+type CommentItem struct {
+	Kind  string `json:"kind"`
+	Text  string `json:"text,omitempty"`
+	Lang  string `json:"lang,omitempty"`
+	Path  string `json:"path"`
+	Range Range  `json:"range"`
+}

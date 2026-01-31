@@ -12,6 +12,12 @@ func TestParseDefaults(t *testing.T) {
 	if opts.ContextLines != 1 {
 		t.Fatalf("ContextLines=%d", opts.ContextLines)
 	}
+	if opts.Limit != 20 {
+		t.Fatalf("Limit=%d", opts.Limit)
+	}
+	if opts.Offset != 0 {
+		t.Fatalf("Offset=%d", opts.Offset)
+	}
 	if opts.Unit != "block" {
 		t.Fatalf("Unit=%q", opts.Unit)
 	}
@@ -59,5 +65,17 @@ func TestUnitInvalidIsError(t *testing.T) {
 	_, _, err := ExecuteForTest(cmd)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestExplainNoValueDefaultsToText(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"q", "k", "--explain"})
+	_, opts, err := ExecuteForTest(cmd)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if opts.Explain != "text" {
+		t.Fatalf("Explain=%q", opts.Explain)
 	}
 }

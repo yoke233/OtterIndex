@@ -1,11 +1,13 @@
 package otidxd
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 
 	"otterindex/internal/version"
@@ -17,6 +19,7 @@ type Options struct {
 
 type Server struct {
 	opts Options
+	h    *Handlers
 
 	mu        sync.Mutex
 	listener  net.Listener
@@ -30,6 +33,7 @@ func NewServer(opts Options) *Server {
 	}
 	return &Server{
 		opts:   opts,
+		h:      NewHandlers(),
 		closed: make(chan struct{}),
 	}
 }
@@ -101,16 +105,28 @@ func (s *Server) isClosed() bool {
 func (s *Server) handleConn(conn net.Conn) {
 	defer conn.Close()
 
-	dec := json.NewDecoder(conn)
-	enc := json.NewEncoder(conn)
+	r := bufio.NewReader(conn)
+	w := bufio.NewWriter(conn)
+	defer func() { _ = w.Flush() }()
 
 	for {
 		var req Request
-		if err := dec.Decode(&req); err != nil {
+		line, err := ReadOneLine(r)
+		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return
 			}
 			return
+		}
+
+		if err := json.Unmarshal(line, &req); err != nil {
+			_ = WriteOneLine(w, Response{
+				JSONRPC: "2.0",
+				ID:      json.RawMessage("null"),
+				Error:   &ErrorObject{Code: -32700, Message: "parse error"},
+			})
+			_ = w.Flush()
+			continue
 		}
 
 		if len(req.ID) == 0 {
@@ -120,7 +136,8 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 
 		resp := s.dispatch(req)
-		_ = enc.Encode(resp)
+		_ = WriteOneLine(w, resp)
+		_ = w.Flush()
 	}
 }
 
@@ -140,6 +157,60 @@ func (s *Server) dispatch(req Request) Response {
 		resp.Result = "pong"
 	case "version":
 		resp.Result = version.String()
+	case "workspace.add":
+		var p WorkspaceAddParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &p); err != nil {
+				resp.Error = &ErrorObject{Code: -32602, Message: "invalid params"}
+				return resp
+			}
+		}
+		wsid, err := s.h.WorkspaceAdd(p)
+		if err != nil {
+			resp.Error = &ErrorObject{Code: -32000, Message: err.Error()}
+			return resp
+		}
+		resp.Result = wsid
+	case "index.build":
+		var p IndexBuildParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &p); err != nil {
+				resp.Error = &ErrorObject{Code: -32602, Message: "invalid params"}
+				return resp
+			}
+		}
+		if strings.TrimSpace(p.WorkspaceID) == "" {
+			resp.Error = &ErrorObject{Code: -32602, Message: "workspace_id is required"}
+			return resp
+		}
+		v, err := s.h.IndexBuild(p)
+		if err != nil {
+			resp.Error = &ErrorObject{Code: -32000, Message: err.Error()}
+			return resp
+		}
+		resp.Result = v
+	case "query":
+		var p QueryParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &p); err != nil {
+				resp.Error = &ErrorObject{Code: -32602, Message: "invalid params"}
+				return resp
+			}
+		}
+		if strings.TrimSpace(p.WorkspaceID) == "" {
+			resp.Error = &ErrorObject{Code: -32602, Message: "workspace_id is required"}
+			return resp
+		}
+		if strings.TrimSpace(p.Q) == "" {
+			resp.Error = &ErrorObject{Code: -32602, Message: "q is required"}
+			return resp
+		}
+		items, err := s.h.Query(p)
+		if err != nil {
+			resp.Error = &ErrorObject{Code: -32000, Message: err.Error()}
+			return resp
+		}
+		resp.Result = items
 	default:
 		resp.Error = &ErrorObject{Code: -32601, Message: "method not found"}
 	}

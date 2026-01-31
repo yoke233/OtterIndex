@@ -17,6 +17,10 @@ type Options struct {
 	ExcludeGlobs    []string
 	CaseInsensitive bool
 	ContextLines    int
+	Limit           int
+	Offset          int
+	Cache           bool
+	CacheSize       int
 	Compact         bool
 	Unit            string
 	Show            bool
@@ -24,7 +28,7 @@ type Options struct {
 	VimLines        bool
 	Theme           string
 	Jsonl           bool
-	Explain         bool
+	Explain         string
 	Viz             string
 	ListDatabases   bool
 
@@ -43,11 +47,27 @@ func (o *Options) Prepare() error {
 	if o.ContextLines < 0 {
 		return fmt.Errorf("context lines must be >= 0")
 	}
+	if o.Limit <= 0 {
+		return fmt.Errorf("limit must be >= 1")
+	}
+	if o.Offset < 0 {
+		return fmt.Errorf("offset must be >= 0")
+	}
+	if o.CacheSize <= 0 {
+		return fmt.Errorf("cache size must be >= 1")
+	}
 
 	switch o.Unit {
-	case "line", "block", "file":
+	case "line", "block", "symbol", "file":
 	default:
-		return fmt.Errorf("invalid --unit %q (expected: line|block|file)", o.Unit)
+		return fmt.Errorf("invalid --unit %q (expected: line|block|symbol|file)", o.Unit)
+	}
+
+	o.Explain = strings.TrimSpace(o.Explain)
+	switch o.Explain {
+	case "", "text", "json":
+	default:
+		return fmt.Errorf("invalid --explain %q (expected: text|json)", o.Explain)
 	}
 
 	if o.Viz != "" {
@@ -115,6 +135,10 @@ func bindFlags(cmd *cobra.Command, opts *Options) {
 	cmd.PersistentFlags().StringSliceVarP(&opts.IncludeGlobs, "glob", "g", nil, "only search these files (can repeat)")
 	cmd.PersistentFlags().BoolVarP(&opts.CaseInsensitive, "ignore-case", "i", opts.CaseInsensitive, "case in-sensitive scan")
 	cmd.PersistentFlags().IntVarP(&opts.ContextLines, "context", "c", opts.ContextLines, "number of lines of context to display before and after a match, default is 1")
+	cmd.PersistentFlags().IntVar(&opts.Limit, "limit", opts.Limit, "max results to return")
+	cmd.PersistentFlags().IntVar(&opts.Offset, "offset", opts.Offset, "skip first N results")
+	cmd.PersistentFlags().BoolVar(&opts.Cache, "cache", opts.Cache, "enable query result cache (mostly useful in daemon/interactive mode)")
+	cmd.PersistentFlags().IntVar(&opts.CacheSize, "cache-size", opts.CacheSize, "query cache size (LRU entries)")
 	cmd.PersistentFlags().BoolVar(&opts.Compact, "compact", opts.Compact, "compact one-line output (path:line: snippet)")
 	cmd.PersistentFlags().BoolVar(&opts.Show, "show", opts.Show, "show unit source (multi-line)")
 
@@ -126,9 +150,12 @@ func bindFlags(cmd *cobra.Command, opts *Options) {
 
 	cmd.PersistentFlags().BoolVarP(&opts.ListDatabases, "list-databases", "l", opts.ListDatabases, "lists databases available")
 
-	cmd.PersistentFlags().StringVar(&opts.Unit, "unit", opts.Unit, "unit granularity: line|block|file")
+	cmd.PersistentFlags().StringVar(&opts.Unit, "unit", opts.Unit, "unit granularity: line|block|symbol|file")
 	cmd.PersistentFlags().BoolVar(&opts.Jsonl, "jsonl", opts.Jsonl, "output as JSONL")
-	cmd.PersistentFlags().BoolVar(&opts.Explain, "explain", opts.Explain, "print explain info to stderr")
+	cmd.PersistentFlags().StringVar(&opts.Explain, "explain", opts.Explain, "print explain info to stderr (optional: json)")
+	if f := cmd.PersistentFlags().Lookup("explain"); f != nil {
+		f.NoOptDefVal = "text"
+	}
 	cmd.PersistentFlags().StringVar(&opts.Viz, "viz", opts.Viz, "viz output mode (ascii)")
 }
 
@@ -154,6 +181,10 @@ func newDefaultOptions() *Options {
 	return &Options{
 		DBPath:       ".otidx/index.db",
 		ContextLines: 1,
+		Limit:        20,
+		Offset:       0,
+		Cache:        false,
+		CacheSize:    128,
 		Unit:         "block",
 		Theme:        "default",
 	}

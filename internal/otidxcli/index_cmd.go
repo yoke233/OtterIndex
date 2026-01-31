@@ -2,13 +2,11 @@ package otidxcli
 
 import (
 	"fmt"
-	"strings"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"otterindex/internal/core/indexer"
-	"otterindex/internal/index/sqlite"
 )
 
 func newIndexCommand() *cobra.Command {
@@ -22,7 +20,8 @@ func newIndexCommand() *cobra.Command {
 }
 
 func newIndexBuildCommand() *cobra.Command {
-	return &cobra.Command{
+	var workers int
+	cmd := &cobra.Command{
 		Use:   "build [path]",
 		Short: "Build (or rebuild) the local SQLite index",
 		Args:  cobra.MaximumNArgs(1),
@@ -44,46 +43,31 @@ func newIndexBuildCommand() *cobra.Command {
 				return fmt.Errorf("options missing")
 			}
 
+			var ex *ExplainCollector
+			if opts.Explain != "" {
+				ex = NewExplainCollector(ExplainOptions{Format: opts.Explain})
+			}
+
 			err = indexer.Build(root, opts.DBPath, indexer.Options{
 				WorkspaceID:  root,
+				Workers:      workers,
 				ScanAll:      opts.ScanAll,
 				IncludeGlobs: opts.IncludeGlobs,
 				ExcludeGlobs: opts.ExcludeGlobs,
+				Explain:      ex,
 			})
 			if err != nil {
 				return err
 			}
 
-			if opts.Explain {
-				hasFTS := false
-				chunkCount := 0
-				if s, err := sqlite.Open(opts.DBPath); err == nil {
-					hasFTS = s.HasFTS()
-					if n, err := s.CountChunks(root); err == nil {
-						chunkCount = n
-					}
-					_ = s.Close()
-				}
-
-				w := cmd.ErrOrStderr()
-				fmt.Fprintln(w, "explain:")
-				fmt.Fprintln(w, "  action: index build")
-				fmt.Fprintf(w, "  root: %s\n", root)
-				fmt.Fprintf(w, "  db: %s\n", opts.DBPath)
-				fmt.Fprintf(w, "  fts: %v\n", hasFTS)
-				if len(opts.IncludeGlobs) > 0 {
-					fmt.Fprintf(w, "  include: %s\n", strings.Join(opts.IncludeGlobs, ","))
-				}
-				if len(opts.ExcludeGlobs) > 0 {
-					fmt.Fprintf(w, "  exclude: %s\n", strings.Join(opts.ExcludeGlobs, ","))
-				}
-				if opts.ScanAll {
-					fmt.Fprintln(w, "  scan-all: true")
-				}
-				fmt.Fprintf(w, "  chunks: %d\n", chunkCount)
+			if ex != nil {
+				_ = ex.Emit(cmd.ErrOrStderr())
 			}
 
 			return nil
 		},
 	}
+
+	cmd.Flags().IntVarP(&workers, "workers", "j", 0, "number of parallel index workers (default: CPU/2)")
+	return cmd
 }

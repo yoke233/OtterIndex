@@ -161,3 +161,30 @@ func clamp(v, min, max int) int {
 	}
 	return v
 }
+
+func MinEnclosingSymbolRange(symbols []model.SymbolItem, line int) (model.Range, bool) {
+	if line <= 0 || len(symbols) == 0 {
+		return model.Range{}, false
+	}
+
+	bestIdx := -1
+	bestSpan := 0
+	for i := range symbols {
+		r := symbols[i].Range
+		if r.SL <= 0 || r.EL <= 0 {
+			continue
+		}
+		if r.SL > line || r.EL < line {
+			continue
+		}
+		span := r.EL - r.SL
+		if bestIdx == -1 || span < bestSpan {
+			bestIdx = i
+			bestSpan = span
+		}
+	}
+	if bestIdx == -1 {
+		return model.Range{}, false
+	}
+	return symbols[bestIdx].Range, true
+}

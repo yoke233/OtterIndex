@@ -15,7 +15,7 @@ type Options struct {
 }
 
 func ListFiles(root string, opts Options) ([]string, error) {
-	ig, err := loadIgnoreMatcher(root, opts.ScanAll)
+	filter, err := NewFilter(root, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -35,27 +35,14 @@ func ListFiles(root string, opts Options) ([]string, error) {
 		}
 		rel = filepath.ToSlash(rel)
 
-		name := d.Name()
 		if d.IsDir() {
-			if !opts.ScanAll && (isHidden(name) || isDefaultSkippedDir(name)) {
-				return filepath.SkipDir
-			}
-			if !opts.ScanAll && ig.isIgnored(rel, true) {
+			if !filter.ShouldInclude(rel, true) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		if !opts.ScanAll && isHidden(name) {
-			return nil
-		}
-		if !opts.ScanAll && ig.isIgnored(rel, false) {
-			return nil
-		}
-		if len(opts.IncludeGlobs) > 0 && !anyGlobMatch(opts.IncludeGlobs, rel) {
-			return nil
-		}
-		if anyGlobMatch(opts.ExcludeGlobs, rel) {
+		if !filter.ShouldInclude(rel, false) {
 			return nil
 		}
 
