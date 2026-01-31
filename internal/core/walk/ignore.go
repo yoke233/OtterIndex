@@ -1,80 +1,39 @@
 package walk
 
 import (
-	"bufio"
-	"os"
-	"path"
-	"path/filepath"
 	"strings"
+
+	"github.com/go-git/go-billy/v5/osfs"
+	gitignore "github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
 type ignoreMatcher struct {
-	patterns []string
+	matcher gitignore.Matcher
 }
 
 func loadIgnoreMatcher(root string, scanAll bool) (*ignoreMatcher, error) {
 	if scanAll {
-		return &ignoreMatcher{patterns: nil}, nil
+		return &ignoreMatcher{matcher: nil}, nil
 	}
 
-	var patterns []string
-	for _, name := range []string{".gitignore", ".otidxignore"} {
-		p, err := readIgnoreFile(filepath.Join(root, name))
-		if err != nil {
-			return nil, err
-		}
-		patterns = append(patterns, p...)
-	}
-	return &ignoreMatcher{patterns: patterns}, nil
-}
-
-func readIgnoreFile(path string) ([]string, error) {
-	f, err := os.Open(path)
+	fs := osfs.New(root)
+	patterns, err := gitignore.ReadPatterns(fs, nil)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	defer f.Close()
-
-	var out []string
-	s := bufio.NewScanner(f)
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		out = append(out, line)
-	}
-	if err := s.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return &ignoreMatcher{matcher: gitignore.NewMatcher(patterns)}, nil
 }
 
-func (m *ignoreMatcher) isIgnored(relPath string) bool {
-	if m == nil || len(m.patterns) == 0 {
+func (m *ignoreMatcher) isIgnored(relPath string, isDir bool) bool {
+	if m == nil || m.matcher == nil {
 		return false
 	}
-	relPath = filepath.ToSlash(relPath)
-	base := path.Base(relPath)
-	for _, raw := range m.patterns {
-		pat := strings.TrimSpace(raw)
-		if pat == "" {
-			continue
-		}
-		pat = strings.ReplaceAll(pat, "\\", "/")
-		if strings.Contains(pat, "/") {
-			if ok, _ := path.Match(pat, relPath); ok {
-				return true
-			}
-			continue
-		}
-		if ok, _ := path.Match(pat, base); ok {
-			return true
-		}
-	}
-	return false
-}
 
+	relPath = strings.Trim(relPath, "/")
+	if relPath == "" {
+		return false
+	}
+
+	segments := strings.Split(relPath, "/")
+	return m.matcher.Match(segments, isDir)
+}

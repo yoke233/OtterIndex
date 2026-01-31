@@ -29,24 +29,27 @@ func ListFiles(root string, opts Options) ([]string, error) {
 			return nil
 		}
 
-		name := d.Name()
-		if d.IsDir() {
-			if !opts.ScanAll && (isHidden(name) || isDefaultSkippedDir(name)) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
 
+		name := d.Name()
+		if d.IsDir() {
+			if !opts.ScanAll && (isHidden(name) || isDefaultSkippedDir(name)) {
+				return filepath.SkipDir
+			}
+			if !opts.ScanAll && ig.isIgnored(rel, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		if !opts.ScanAll && isHidden(name) {
 			return nil
 		}
-		if !opts.ScanAll && ig.isIgnored(rel) {
+		if !opts.ScanAll && ig.isIgnored(rel, false) {
 			return nil
 		}
 		if len(opts.IncludeGlobs) > 0 && !anyGlobMatch(opts.IncludeGlobs, rel) {
