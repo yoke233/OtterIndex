@@ -7,7 +7,9 @@ import (
 )
 
 func main() {
-	if err := otidxcli.NewRootCommand().Execute(); err != nil {
+	cmd := otidxcli.NewRootCommand()
+	cmd.SetArgs(otidxcli.RewriteArgsForImplicitQ(cmd, os.Args[1:]))
+	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

@@ -95,7 +95,7 @@ func (o *Options) normalize() {
 
 	o.Unit = strings.TrimSpace(o.Unit)
 	if o.Unit == "" {
-		o.Unit = "block"
+		o.Unit = defaultUnit()
 	}
 }
 
@@ -185,7 +185,7 @@ func newDefaultOptions() *Options {
 		Offset:       0,
 		Cache:        false,
 		CacheSize:    128,
-		Unit:         "block",
+		Unit:         defaultUnit(),
 		Theme:        "default",
 	}
 }

@@ -24,6 +24,24 @@ go build -o otidx.exe ./cmd/otidx
 go build -o otidxd.exe ./cmd/otidxd
 ```
 
+### 可选：启用 tree-sitter（默认 `--unit symbol`）
+
+tree-sitter 版需要在构建/运行时加 `-tags treesitter`，并且本机可用 CGO + gcc（Windows 推荐 MinGW）。
+在 tree-sitter 版里，`q` 的默认 `--unit` 会自动变成 `symbol`（如果你更喜欢旧行为，可显式传 `--unit block`）。
+
+```powershell
+# 构建 treesitter 版（二选一：build 或 go run）
+go build -tags treesitter -o otidx-ts.exe ./cmd/otidx
+
+# 重新建索引（写入 symbols/comments；否则 --unit symbol 会自动降级）
+.\otidx-ts.exe index build .
+
+# 默认就是最小符号范围（可用 --unit block 退回旧行为）
+.\otidx-ts.exe keyword --explain
+```
+
+Windows 下推荐直接跑：`pwsh -NoProfile -File scripts/test-treesitter.ps1`；常见 cgo/MinGW 问题排查见：`docs/cgo-windows-mingw.md`。
+
 ---
 
 ## 快速上手
@@ -40,7 +58,9 @@ go run ./cmd/otidx index build .
 ### 2）关键词查询
 
 ```powershell
-go run ./cmd/otidx q "keyword"
+# 两种写法等价：
+go run ./cmd/otidx q keyword
+go run ./cmd/otidx keyword
 ```
 
 默认输出：**多行“单元块”**（路径为相对路径），包含：
@@ -54,7 +74,7 @@ go run ./cmd/otidx q "keyword"
 
 ## 为什么 OtterIndex（我们强在哪里）
 
-- **更“贴近代码单元”**：不是只吐一行命中，而是给你一个可控的最小上下文单元块（`--unit line|block|file`），并带 `range {sl,el}` 方便继续取上下文。
+- **更“贴近代码单元”**：不是只吐一行命中，而是给你一个可控的最小上下文单元块（`--unit line|block|file|symbol`），并带 `range {sl,el}` 方便继续取上下文。
 - **定位信息完整**：默认输出 `path:line`，`-L` 输出 `path:line:col`，`--jsonl` 输出 `range`（行号范围）+ `matches`（命中位置）。
 - **默认就输出“单元块”**：`otidx q "..."` 直接多行打印（更适合“查代码”）；想要快速浏览/脚本管线可以用 `--compact/-L/--jsonl`。
 - **机器可读也不丢上下文**：`--jsonl --show` 会把单元块塞进 `text` 字段，方便直接喂给脚本/Agent。
@@ -88,7 +108,7 @@ explain:
 ### 2）默认查询输出（多行单元块）
 
 ```powershell
-> .\.otidx\bin\otidx.exe q "maybePrintViz" | Select-Object -First 19
+> .\.otidx\bin\otidx.exe maybePrintViz | Select-Object -First 19
 internal/otidxcli/explain.go:10:6 (10-26)
 > 10| func maybePrintViz(cmd *cobra.Command) {
   11| 	if cmd == nil {
@@ -112,7 +132,7 @@ internal/otidxcli/explain.go:10:6 (10-26)
 ### 3）单行列表（grep 风格）
 
 ```powershell
-> .\.otidx\bin\otidx.exe q "maybePrintViz" --compact
+> .\.otidx\bin\otidx.exe maybePrintViz --compact
 internal/otidxcli/explain.go:10: func maybePrintViz(cmd *cobra.Command) {
 internal/otidxcli/index_cmd.go:30: maybePrintViz(cmd)
 internal/otidxcli/q_cmd.go:24: maybePrintViz(cmd)
@@ -122,7 +142,7 @@ internal/otidxcli/root.go:33: maybePrintViz(cmd)
 ### 4）Vim 友好输出（path:line:col: snippet）
 
 ```powershell
-> .\.otidx\bin\otidx.exe q "maybePrintViz" -L
+> .\.otidx\bin\otidx.exe maybePrintViz -L
 internal/otidxcli/explain.go:10:6: func maybePrintViz(cmd *cobra.Command) {
 internal/otidxcli/index_cmd.go:30:4: maybePrintViz(cmd)
 internal/otidxcli/q_cmd.go:24:4: maybePrintViz(cmd)
@@ -134,14 +154,14 @@ internal/otidxcli/root.go:33:5: maybePrintViz(cmd)
 `--unit line -c 2`：返回命中行上下 2 行的范围（`sl..el`）。
 
 ```powershell
-> .\.otidx\bin\otidx.exe q "maybePrintViz" --jsonl --unit line -c 2 | Select-Object -First 1
+> .\.otidx\bin\otidx.exe maybePrintViz --jsonl --unit line -c 2 | Select-Object -First 1
 {"kind":"unit","path":"internal/otidxcli/explain.go","range":{"sl":8,"sc":1,"el":12,"ec":1},"snippet":"func maybePrintViz(cmd *cobra.Command) {","matches":[{"line":10,"col":6,"text":"func maybePrintViz(cmd *cobra.Command) {"}]}
 ```
 
 加上 `--show` 会把单元块内容写入 JSON 的 `text` 字段：
 
 ```powershell
-> .\.otidx\bin\otidx.exe q "maybePrintViz" --jsonl --show --unit line -c 2 | Select-Object -First 1
+> .\.otidx\bin\otidx.exe maybePrintViz --jsonl --show --unit line -c 2 | Select-Object -First 1
 {"kind":"unit","path":"internal/otidxcli/explain.go","range":{"sl":8,"sc":1,"el":12,"ec":1},"snippet":"func maybePrintViz(cmd *cobra.Command) {","text":")\n\nfunc maybePrintViz(cmd *cobra.Command) {\n\tif cmd == nil {\n\t\treturn","matches":[{"line":10,"col":6,"text":"func maybePrintViz(cmd *cobra.Command) {"}]}
 ```
 
@@ -207,11 +227,16 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-external-projects.ps
 
 ### 查询
 
+- 查询命令：`otidx q <query...>`；也可以省略 `q`：`otidx <query...>`（更像 `rg`）
+  - 如果你的 query 恰好是子命令名（如 `index/help/completion`），会优先进入子命令；此时请用显式写法：`otidx q index`
+  - query 支持多个词：`otidx foo bar`（内部会用空格拼起来）；需要保留空格/特殊字符时请加引号
+  - 如果 query 以 `-` 开头，请用 `--` 终止 flags：`otidx -- -foo`
 - `-i`：大小写不敏感（用于文本定位/LIKE 回退等）
-- `--unit <line|block|file>`：返回力度（默认 `block`）
+- `--unit <line|block|file|symbol>`：返回力度（默认：非 treesitter 版为 `block`；treesitter 版为 `symbol`）
   - `block`：返回索引 chunk 的行号范围（目前 chunk 默认按 40 行切分）
   - `line`：返回命中行上下文（受 `-c` 影响）
   - `file`：返回整文件范围（如果能拿到 workspace root 则计算到 EOF）
+  - `symbol`：返回命中点所在的最小符号范围（tree-sitter；需要 `-tags treesitter` + CGO；无数据/不支持则自动降级为 `block`，见 `--explain` 的 `symbol_fallback/unit_fallback`）
 - `-c <num>`：上下文行数（默认 1；仅 `--unit line` 生效）
 
 ### 输出
@@ -232,19 +257,19 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-external-projects.ps
 ### 只查 Go 文件，返回命中行上下文
 
 ```powershell
-go run ./cmd/otidx q "NewRootCommand" --unit line -c 2 -g "*.go"
+go run ./cmd/otidx NewRootCommand --unit line -c 2 -g "*.go"
 ```
 
 ### 输出 JSONL（带 range）
 
 ```powershell
-go run ./cmd/otidx q "sqlite" --jsonl
+go run ./cmd/otidx sqlite --jsonl
 ```
 
 ### 调试：查看 explain + 管线图
 
 ```powershell
-go run ./cmd/otidx q "index" --explain --viz ascii
+go run ./cmd/otidx q index --explain --viz ascii
 ```
 
 ---
@@ -274,4 +299,6 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
 
 - 需要先 `otidx index build` 生成 SQLite 索引；目前不做增量更新/监听，文件变更后建议重建索引。
 - SQLite FTS5 **默认尝试启用**；如果当前 SQLite 构建不支持 FTS5（或创建虚表失败）会自动回退到 `LIKE`（速度较慢但可用，可用 `--explain` 查看 `fts5/fts5_reason`）。
-- “最小代码单元块”用 `--unit` 控制（`line/block/file/symbol`）；`symbol` 目前仅 **Go（tree-sitter）** 真正可用，其他语言会自动降级为 `block`（`--explain` 里会标注 `symbol_fallback` / `unit_fallback`）。
+- “最小代码单元块”用 `--unit` 控制（`line/block/file/symbol`）。
+  - `symbol` 依赖 tree-sitter：需要以 `-tags treesitter` 构建/运行，并且启用 CGO。
+  - 当前已接入：Go/Java/Python/JavaScript/TypeScript/TSX/C/C++/PHP/C#/JSON/Bash；其他文件类型会自动降级为 `block`（`--explain` 里会标注 `symbol_fallback/unit_fallback`）。

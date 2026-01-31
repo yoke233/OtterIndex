@@ -18,7 +18,7 @@ func TestParseDefaults(t *testing.T) {
 	if opts.Offset != 0 {
 		t.Fatalf("Offset=%d", opts.Offset)
 	}
-	if opts.Unit != "block" {
+	if opts.Unit != defaultUnit() {
 		t.Fatalf("Unit=%q", opts.Unit)
 	}
 }

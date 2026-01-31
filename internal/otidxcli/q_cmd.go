@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -13,7 +14,7 @@ import (
 
 func newQCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "q <q>",
+		Use:   "q <query...>",
 		Short: "Query local index",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -27,6 +28,8 @@ func newQCommand() *cobra.Command {
 			if opts == nil {
 				return fmt.Errorf("options missing")
 			}
+
+			q := strings.Join(args, " ")
 
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -79,11 +82,11 @@ func newQCommand() *cobra.Command {
 					return err
 				}
 
-				items, err = query.QueryWithCache(cache, ver, workspaceID, args[0], qopts, func() ([]ResultItem, error) {
-					return query.Query(opts.DBPath, workspaceID, args[0], qopts)
+				items, err = query.QueryWithCache(cache, ver, workspaceID, q, qopts, func() ([]ResultItem, error) {
+					return query.Query(opts.DBPath, workspaceID, q, qopts)
 				})
 			} else {
-				items, err = query.Query(opts.DBPath, workspaceID, args[0], qopts)
+				items, err = query.Query(opts.DBPath, workspaceID, q, qopts)
 			}
 			if err != nil {
 				return err
