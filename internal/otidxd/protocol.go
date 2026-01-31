@@ -43,6 +43,7 @@ type QueryParams struct {
 	CaseInsensitive bool     `json:"case_insensitive,omitempty"`
 	IncludeGlobs    []string `json:"include_globs,omitempty"`
 	ExcludeGlobs    []string `json:"exclude_globs,omitempty"`
+	Show            bool     `json:"show,omitempty"`
 }
 
 type WatchStartParams struct {

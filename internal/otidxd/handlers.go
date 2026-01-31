@@ -157,9 +157,23 @@ func (h *Handlers) Query(p QueryParams) ([]model.ResultItem, error) {
 	}
 
 	if h.cache == nil {
-		return run()
+		items, err := run()
+		if err != nil {
+			return nil, err
+		}
+		if p.Show {
+			attachText(ws.root, items)
+		}
+		return items, nil
 	}
-	return query.QueryWithCache(h.cache, ver, p.WorkspaceID, p.Q, opts, run)
+	items, err := query.QueryWithCache(h.cache, ver, p.WorkspaceID, p.Q, opts, run)
+	if err != nil {
+		return nil, err
+	}
+	if p.Show {
+		attachText(ws.root, items)
+	}
+	return items, nil
 }
 
 type watcherEntry struct {
@@ -295,4 +309,71 @@ func (h *Handlers) getWorkspace(workspaceID string) (workspaceInfo, bool) {
 	ws, ok := h.workspaces[strings.TrimSpace(workspaceID)]
 	h.mu.RUnlock()
 	return ws, ok
+}
+
+func attachText(workspaceRoot string, items []model.ResultItem) {
+	base := strings.TrimSpace(workspaceRoot)
+	if base == "" {
+		base = "."
+	}
+
+	fileCache := map[string][]string{}
+	for i := range items {
+		if strings.TrimSpace(items[i].Text) != "" {
+			continue
+		}
+
+		lines := loadFileLines(base, items[i].Path, fileCache)
+		if len(lines) == 0 {
+			continue
+		}
+
+		sl := clampInt(items[i].Range.SL, 1, len(lines))
+		el := clampInt(items[i].Range.EL, sl, len(lines))
+		items[i].Text = strings.Join(lines[sl-1:el], "\n")
+	}
+}
+
+func loadFileLines(base string, rel string, cache map[string][]string) []string {
+	if cache != nil {
+		if v, ok := cache[rel]; ok {
+			return v
+		}
+	}
+
+	full := filepath.Join(base, filepath.FromSlash(rel))
+	b, err := os.ReadFile(full)
+	if err != nil {
+		if cache != nil {
+			cache[rel] = nil
+		}
+		return nil
+	}
+
+	lines := splitLines(string(b))
+	if cache != nil {
+		cache[rel] = lines
+	}
+	return lines
+}
+
+func splitLines(text string) []string {
+	if text == "" {
+		return nil
+	}
+	parts := strings.Split(text, "\n")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	return parts
+}
+
+func clampInt(v int, min int, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
