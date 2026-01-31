@@ -43,7 +43,12 @@ go run ./cmd/otidx index build .
 go run ./cmd/otidx q "keyword"
 ```
 
-默认输出格式：`path:line: snippet`（路径为相对路径）。
+默认输出：**多行“单元块”**（路径为相对路径），包含：
+
+- `path:line:col (sl-el) snippet`
+- 带行号的代码/文本块（命中行用 `>` 标记）
+
+如果你想要 grep 风格的**单行列表**：加 `--compact`；想要 vim 友好：加 `-L`；想要脚本/Agent：用 `--jsonl`。
 
 ---
 
@@ -51,7 +56,8 @@ go run ./cmd/otidx q "keyword"
 
 - **更“贴近代码单元”**：不是只吐一行命中，而是给你一个可控的最小上下文单元块（`--unit line|block|file`），并带 `range {sl,el}` 方便继续取上下文。
 - **定位信息完整**：默认输出 `path:line`，`-L` 输出 `path:line:col`，`--jsonl` 输出 `range`（行号范围）+ `matches`（命中位置）。
-- **能直接把“单元块文本”吐出来**：`--show` 多行打印；`--jsonl --show` 会把单元块塞进 `text` 字段，方便直接喂给脚本/Agent。
+- **默认就输出“单元块”**：`otidx q "..."` 直接多行打印（更适合“查代码”）；想要快速浏览/脚本管线可以用 `--compact/-L/--jsonl`。
+- **机器可读也不丢上下文**：`--jsonl --show` 会把单元块塞进 `text` 字段，方便直接喂给脚本/Agent。
 - **索引一次，多次查询**：`index build` 把内容落到本地 SQLite（可用则启用 FTS5），后续 `q` 不再全量遍历文件树，查询更快。
 - **过滤与忽略更符合工程习惯**：支持 `-g/-x/-A`，默认按 `.gitignore` 语义过滤，并跳过 `.git/node_modules/dist/target` 与隐藏文件。
 - **对脚本/Agent 友好**：`--jsonl` 适合直接喂给脚本；`--explain/--viz ascii` 方便调试与可解释输出；`otidxd` 预留给 IDE/Agent 的 RPC 接入。
@@ -79,22 +85,10 @@ explain:
   chunks: 273
 ```
 
-### 2）默认查询输出（path:line: snippet）
+### 2）默认查询输出（多行单元块）
 
 ```powershell
-> .\.otidx\bin\otidx.exe q "maybePrintViz"
-internal/otidxcli/explain.go:10: func maybePrintViz(cmd *cobra.Command) {
-internal/otidxcli/index_cmd.go:30: maybePrintViz(cmd)
-internal/otidxcli/q_cmd.go:24: maybePrintViz(cmd)
-internal/otidxcli/root.go:33: maybePrintViz(cmd)
-```
-
-### 3）输出“最小单元块”（多行）
-
-`--show --unit block`：输出包含命中的最小代码块范围（`sl..el`），并把块内容按行号打印出来（命中行用 `>` 标记）。
-
-```powershell
-> .\.otidx\bin\otidx.exe q "maybePrintViz" --show --unit block
+> .\.otidx\bin\otidx.exe q "maybePrintViz" | Select-Object -First 19
 internal/otidxcli/explain.go:10:6 (10-26) func maybePrintViz(cmd *cobra.Command) {
 > 10| func maybePrintViz(cmd *cobra.Command) {
   11| 	if cmd == nil {
@@ -113,6 +107,16 @@ internal/otidxcli/explain.go:10:6 (10-26) func maybePrintViz(cmd *cobra.Command)
   24| 		_, _ = fmt.Fprint(cmd.ErrOrStderr(), VizASCII())
   25| 	}
   26| }
+```
+
+### 3）单行列表（grep 风格）
+
+```powershell
+> .\.otidx\bin\otidx.exe q "maybePrintViz" --compact
+internal/otidxcli/explain.go:10: func maybePrintViz(cmd *cobra.Command) {
+internal/otidxcli/index_cmd.go:30: maybePrintViz(cmd)
+internal/otidxcli/q_cmd.go:24: maybePrintViz(cmd)
+internal/otidxcli/root.go:33: maybePrintViz(cmd)
 ```
 
 ### 4）Vim 友好输出（path:line:col: snippet）
@@ -195,7 +199,8 @@ Get-Content -LiteralPath .\internal\otidxcli\explain.go |
 
 - `-L`：vim 友好行：`path:line:col: snippet`
 - `--jsonl`：每行一个 JSON（包含 `range {sl,sc,el,ec}`，适合脚本/agent）
-- `--show`：打印单元块源码（多行；命中行用 `>` 标记；与 `--jsonl` 搭配会写入 `text` 字段）
+- `--compact`：单行输出（`path:line: snippet`），便于快速扫一眼/管线处理
+- `--show`：与 `--jsonl` 搭配时，把单元块文本写入 `text` 字段（默认人读输出已是多行单元块）
 - `--explain`：在 stderr 输出执行信息（db、过滤条件、命中数、unit 决策等）
 - `--viz ascii`：在 stderr 打印固定的 ASCII 管线图（调试）
 

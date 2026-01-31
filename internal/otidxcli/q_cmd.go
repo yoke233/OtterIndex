@@ -37,9 +37,13 @@ func newQCommand() *cobra.Command {
 				return err
 			}
 
+			defaultShow := !opts.Jsonl && !opts.VimLines && !opts.Compact
+			wantWorkspaceRoot := opts.Show || defaultShow
+			wantStoreInfo := opts.Explain || wantWorkspaceRoot
+
 			hasFTS := false
 			workspaceRoot := ""
-			if opts.Explain || opts.Show {
+			if wantStoreInfo {
 				if s, err := sqlite.Open(opts.DBPath); err == nil {
 					hasFTS = s.HasFTS()
 					if ws, err := s.GetWorkspace(workspaceID); err == nil {
@@ -63,7 +67,7 @@ func newQCommand() *cobra.Command {
 			maybePrintExplainQuery(cmd, args[0], workspaceID, hasFTS, len(items))
 
 			var out string
-			if opts.Show && workspaceRoot == "" {
+			if wantWorkspaceRoot && workspaceRoot == "" {
 				workspaceRoot = workspaceID
 			}
 
@@ -73,12 +77,12 @@ func newQCommand() *cobra.Command {
 					AttachText(workspaceRoot, items)
 				}
 				out = RenderJSONL(items)
-			case opts.Show:
-				out = RenderShow(workspaceRoot, items)
 			case opts.VimLines:
 				out = RenderVim(items)
-			default:
+			case opts.Compact:
 				out = RenderDefault(items)
+			default:
+				out = RenderShow(workspaceRoot, items)
 			}
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), out)
