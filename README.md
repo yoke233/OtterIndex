@@ -47,6 +47,83 @@ go run ./cmd/otidx q "keyword"
 
 ---
 
+## 为什么 OtterIndex（我们强在哪里）
+
+- **更“贴近代码单元”**：不是只吐一行命中，而是给你一个可控的最小上下文单元块（`--unit line|block|file`），并带 `range {sl,el}` 方便继续取上下文。
+- **定位信息完整**：默认输出 `path:line`，`-L` 输出 `path:line:col`，`--jsonl` 输出 `range`（行号范围）+ `matches`（命中位置）。
+- **索引一次，多次查询**：`index build` 把内容落到本地 SQLite（可用则启用 FTS5），后续 `q` 不再全量遍历文件树，查询更快。
+- **过滤与忽略更符合工程习惯**：支持 `-g/-x/-A`，默认按 `.gitignore` 语义过滤，并跳过 `.git/node_modules/dist/target` 与隐藏文件。
+- **对脚本/Agent 友好**：`--jsonl` 适合直接喂给脚本；`--explain/--viz ascii` 方便调试与可解释输出；`otidxd` 预留给 IDE/Agent 的 RPC 接入。
+
+---
+
+## 真实输出示例（在本仓库跑出来的）
+
+> 注：下面示例的 workspace 路径是 `D:\xyad\codegrep`，换机器会不同；但相对路径/行号/输出格式一致。
+
+### 1）构建索引（带调试信息）
+
+`--explain` 与 `--viz` 写入 stderr。
+
+```powershell
+> .\.otidx\bin\otidx.exe index build . --explain --viz ascii 2>&1
+pipeline:
+
+  walk   ->  index   ->  query   ->  unitize  ->  render
+explain:
+  action: index build
+  root: D:\xyad\codegrep
+  db: .otidx\index.db
+  fts: true
+  chunks: 273
+```
+
+### 2）默认查询输出（path:line: snippet）
+
+```powershell
+> .\.otidx\bin\otidx.exe q "maybePrintViz"
+internal/otidxcli/explain.go:10: func maybePrintViz(cmd *cobra.Command) {
+internal/otidxcli/index_cmd.go:30: maybePrintViz(cmd)
+internal/otidxcli/q_cmd.go:24: maybePrintViz(cmd)
+internal/otidxcli/root.go:33: maybePrintViz(cmd)
+```
+
+### 3）Vim 友好输出（path:line:col: snippet）
+
+```powershell
+> .\.otidx\bin\otidx.exe q "maybePrintViz" -L
+internal/otidxcli/explain.go:10:6: func maybePrintViz(cmd *cobra.Command) {
+internal/otidxcli/index_cmd.go:30:4: maybePrintViz(cmd)
+internal/otidxcli/q_cmd.go:24:4: maybePrintViz(cmd)
+internal/otidxcli/root.go:33:5: maybePrintViz(cmd)
+```
+
+### 4）JSONL 输出（带 range：可直接拿去取“最小上下文块”）
+
+`--unit line -c 2`：返回命中行上下 2 行的范围（`sl..el`）。
+
+```powershell
+> .\.otidx\bin\otidx.exe q "maybePrintViz" --jsonl --unit line -c 2 | Select-Object -First 1
+{"kind":"unit","path":"internal/otidxcli/explain.go","range":{"sl":8,"sc":1,"el":12,"ec":1},"snippet":"func maybePrintViz(cmd *cobra.Command) {","matches":[{"line":10,"col":6,"text":"func maybePrintViz(cmd *cobra.Command) {"}]}
+```
+
+拿到 `path + range.sl/range.el` 后，你可以在本地直接取出对应代码块：
+
+```powershell
+# 示例：取出 internal/otidxcli/explain.go 的 8..12 行
+Get-Content -LiteralPath .\internal\otidxcli\explain.go |
+  Select-Object -Skip 7 -First 5
+```
+
+---
+
+## 性能（实测）
+
+> 实测环境：在本仓库（`chunks: 273`、`fts: true`）用已构建的 `otidx.exe` 运行（不是 `go run`）。不同机器/仓库规模会有差异。
+
+- 构建索引：约 `227ms`（`otidx index build .`）
+- 执行一次查询：约 `84ms`（`otidx q "maybePrintViz"`）
+
 ## 常用参数（对齐 mgrep 风格）
 
 ### 数据库
@@ -139,4 +216,3 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
 - 需要先 `otidx index build` 生成 SQLite 索引；目前不做增量更新/监听，文件变更后建议重建索引。
 - SQLite FTS5 **可用则用**，不可用会自动回退到 `LIKE`（速度较慢但可用）。
 - “最小代码单元块”当前以 `--unit` 控制（`line/block/file`）；`symbol`（tree-sitter）预留在后续阶段实现。
-
