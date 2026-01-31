@@ -38,6 +38,12 @@ type Chunk struct {
 	WorkspaceID string
 }
 
+type Workspace struct {
+	ID        string
+	Root      string
+	CreatedAt int64
+}
+
 func Open(dbPath string) (*Store, error) {
 	if strings.TrimSpace(dbPath) == "" {
 		return nil, fmt.Errorf("dbPath is required")
@@ -136,6 +142,90 @@ func (s *Store) GetFile(workspaceID string, path string) (File, error) {
 		return File{}, err
 	}
 	return f, nil
+}
+
+func (s *Store) GetWorkspace(workspaceID string) (Workspace, error) {
+	if s == nil || s.db == nil {
+		return Workspace{}, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return Workspace{}, fmt.Errorf("workspaceID is required")
+	}
+
+	var ws Workspace
+	err := s.db.QueryRow(
+		`SELECT id, root, created_at
+		 FROM workspaces
+		 WHERE id = ?`,
+		workspaceID,
+	).Scan(&ws.ID, &ws.Root, &ws.CreatedAt)
+	if err != nil {
+		return Workspace{}, err
+	}
+	return ws, nil
+}
+
+func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, caseInsensitive bool) ([]Chunk, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	keyword = strings.TrimSpace(keyword)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspaceID is required")
+	}
+	if keyword == "" {
+		return nil, fmt.Errorf("keyword is required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var rows *sql.Rows
+	var err error
+	if s.hasFTS {
+		rows, err = s.db.Query(
+			`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text
+			 FROM chunks_fts f
+			 JOIN chunks c ON c.id = f.rowid
+			 WHERE chunks_fts MATCH ? AND c.workspace_id = ?
+			 LIMIT ?`,
+			keyword,
+			workspaceID,
+			limit,
+		)
+	} else {
+		query := `SELECT path, sl, el, kind, title, text
+		          FROM chunks
+		          WHERE workspace_id = ? AND text LIKE '%' || ? || '%'
+		          LIMIT ?`
+		if caseInsensitive {
+			query = `SELECT path, sl, el, kind, title, text
+			         FROM chunks
+			         WHERE workspace_id = ? AND LOWER(text) LIKE '%' || LOWER(?) || '%'
+			         LIMIT ?`
+		}
+		rows, err = s.db.Query(query, workspaceID, keyword, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Chunk
+	for rows.Next() {
+		var c Chunk
+		c.WorkspaceID = workspaceID
+		if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *Store) ReplaceChunks(workspaceID string, path string, chunks []Chunk) error {
