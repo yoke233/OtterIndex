@@ -19,6 +19,6 @@ type ResultItem struct {
 	Range   Range   `json:"range"`
 	Title   string  `json:"title,omitempty"`
 	Snippet string  `json:"snippet,omitempty"`
+	Text    string  `json:"text,omitempty"`
 	Matches []Match `json:"matches,omitempty"`
 }
-

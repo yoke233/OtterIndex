@@ -28,14 +28,6 @@ func newQCommand() *cobra.Command {
 				return fmt.Errorf("options missing")
 			}
 
-			hasFTS := false
-			if opts.Explain {
-				if s, err := sqlite.Open(opts.DBPath); err == nil {
-					hasFTS = s.HasFTS()
-					_ = s.Close()
-				}
-			}
-
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
@@ -43,6 +35,18 @@ func newQCommand() *cobra.Command {
 			workspaceID, err := filepath.Abs(cwd)
 			if err != nil {
 				return err
+			}
+
+			hasFTS := false
+			workspaceRoot := ""
+			if opts.Explain || opts.Show {
+				if s, err := sqlite.Open(opts.DBPath); err == nil {
+					hasFTS = s.HasFTS()
+					if ws, err := s.GetWorkspace(workspaceID); err == nil {
+						workspaceRoot = ws.Root
+					}
+					_ = s.Close()
+				}
 			}
 
 			items, err := query.Query(opts.DBPath, workspaceID, args[0], query.Options{
@@ -59,9 +63,18 @@ func newQCommand() *cobra.Command {
 			maybePrintExplainQuery(cmd, args[0], workspaceID, hasFTS, len(items))
 
 			var out string
+			if opts.Show && workspaceRoot == "" {
+				workspaceRoot = workspaceID
+			}
+
 			switch {
 			case opts.Jsonl:
+				if opts.Show {
+					AttachText(workspaceRoot, items)
+				}
 				out = RenderJSONL(items)
+			case opts.Show:
+				out = RenderShow(workspaceRoot, items)
 			case opts.VimLines:
 				out = RenderVim(items)
 			default:

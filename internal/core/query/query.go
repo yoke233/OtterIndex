@@ -64,6 +64,8 @@ func Query(dbPath string, workspaceID string, q string, opts Options) ([]model.R
 	}
 
 	fileLineCountCache := map[string]int{}
+	fileTextCache := map[string]string{}
+	fileTextLoaded := map[string]bool{}
 
 	var out []model.ResultItem
 	for _, c := range chunks {
@@ -90,7 +92,34 @@ func Query(dbPath string, workspaceID string, q string, opts Options) ([]model.R
 
 		switch opts.Unit {
 		case "block":
-			item.Range = model.Range{SL: c.SL, SC: 1, EL: c.EL, EC: 1}
+			match := model.Match{Line: c.SL, Col: 1}
+			if len(item.Matches) > 0 {
+				match = item.Matches[0]
+			}
+
+			if ws.Root != "" {
+				fullText, ok := fileTextCache[c.Path]
+				if !ok && !fileTextLoaded[c.Path] {
+					fullText = readFileText(filepath.Join(ws.Root, filepath.FromSlash(c.Path)))
+					fileTextCache[c.Path] = fullText
+					fileTextLoaded[c.Path] = true
+				}
+				if strings.TrimSpace(fullText) != "" {
+					item.Range = unit.BlockRange(fullText, match)
+					break
+				}
+			}
+
+			relLine := 1
+			relCol := 1
+			if match.Line >= c.SL {
+				relLine = match.Line - c.SL + 1
+				relCol = match.Col
+			}
+			r := unit.BlockRange(c.Text, model.Match{Line: relLine, Col: relCol})
+			r.SL += c.SL - 1
+			r.EL += c.SL - 1
+			item.Range = r
 		case "line":
 			if len(item.Matches) == 0 {
 				item.Range = unit.LineRange(c.Text, model.Match{Line: 1, Col: 1}, opts.ContextLines)
@@ -158,6 +187,14 @@ func countFileLines(path string) int {
 		parts = parts[:len(parts)-1]
 	}
 	return len(parts)
+}
+
+func readFileText(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func anyGlobMatch(patterns []string, rel string) bool {

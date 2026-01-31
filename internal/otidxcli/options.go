@@ -18,6 +18,7 @@ type Options struct {
 	CaseInsensitive bool
 	ContextLines    int
 	Unit            string
+	Show            bool
 	NoBanner        bool
 	VimLines        bool
 	Theme           string
@@ -113,6 +114,7 @@ func bindFlags(cmd *cobra.Command, opts *Options) {
 	cmd.PersistentFlags().StringSliceVarP(&opts.IncludeGlobs, "glob", "g", nil, "only search these files (can repeat)")
 	cmd.PersistentFlags().BoolVarP(&opts.CaseInsensitive, "ignore-case", "i", opts.CaseInsensitive, "case in-sensitive scan")
 	cmd.PersistentFlags().IntVarP(&opts.ContextLines, "context", "c", opts.ContextLines, "number of lines of context to display before and after a match, default is 1")
+	cmd.PersistentFlags().BoolVar(&opts.Show, "show", opts.Show, "show unit source (multi-line)")
 
 	cmd.PersistentFlags().BoolVarP(&opts.NoBanner, "no-banner", "B", opts.NoBanner, "suppress banner")
 	cmd.PersistentFlags().BoolVarP(&opts.VimLines, "vim-lines", "L", opts.VimLines, "vim friendly lines")

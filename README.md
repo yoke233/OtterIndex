@@ -51,6 +51,7 @@ go run ./cmd/otidx q "keyword"
 
 - **更“贴近代码单元”**：不是只吐一行命中，而是给你一个可控的最小上下文单元块（`--unit line|block|file`），并带 `range {sl,el}` 方便继续取上下文。
 - **定位信息完整**：默认输出 `path:line`，`-L` 输出 `path:line:col`，`--jsonl` 输出 `range`（行号范围）+ `matches`（命中位置）。
+- **能直接把“单元块文本”吐出来**：`--show` 多行打印；`--jsonl --show` 会把单元块塞进 `text` 字段，方便直接喂给脚本/Agent。
 - **索引一次，多次查询**：`index build` 把内容落到本地 SQLite（可用则启用 FTS5），后续 `q` 不再全量遍历文件树，查询更快。
 - **过滤与忽略更符合工程习惯**：支持 `-g/-x/-A`，默认按 `.gitignore` 语义过滤，并跳过 `.git/node_modules/dist/target` 与隐藏文件。
 - **对脚本/Agent 友好**：`--jsonl` 适合直接喂给脚本；`--explain/--viz ascii` 方便调试与可解释输出；`otidxd` 预留给 IDE/Agent 的 RPC 接入。
@@ -88,7 +89,33 @@ internal/otidxcli/q_cmd.go:24: maybePrintViz(cmd)
 internal/otidxcli/root.go:33: maybePrintViz(cmd)
 ```
 
-### 3）Vim 友好输出（path:line:col: snippet）
+### 3）输出“最小单元块”（多行）
+
+`--show --unit block`：输出包含命中的最小代码块范围（`sl..el`），并把块内容按行号打印出来（命中行用 `>` 标记）。
+
+```powershell
+> .\.otidx\bin\otidx.exe q "maybePrintViz" --show --unit block
+internal/otidxcli/explain.go:10:6 (10-26) func maybePrintViz(cmd *cobra.Command) {
+> 10| func maybePrintViz(cmd *cobra.Command) {
+  11| 	if cmd == nil {
+  12| 		return
+  13| 	}
+  14| 	opts := optionsFrom(cmd)
+  15| 	if opts == nil {
+  16| 		return
+  17| 	}
+  18| 	if opts.Viz == "" {
+  19| 		return
+  20| 	}
+  21| 
+  22| 	switch opts.Viz {
+  23| 	case "ascii":
+  24| 		_, _ = fmt.Fprint(cmd.ErrOrStderr(), VizASCII())
+  25| 	}
+  26| }
+```
+
+### 4）Vim 友好输出（path:line:col: snippet）
 
 ```powershell
 > .\.otidx\bin\otidx.exe q "maybePrintViz" -L
@@ -98,7 +125,7 @@ internal/otidxcli/q_cmd.go:24:4: maybePrintViz(cmd)
 internal/otidxcli/root.go:33:5: maybePrintViz(cmd)
 ```
 
-### 4）JSONL 输出（带 range：可直接拿去取“最小上下文块”）
+### 5）JSONL 输出（带 range + 可选 text）
 
 `--unit line -c 2`：返回命中行上下 2 行的范围（`sl..el`）。
 
@@ -107,7 +134,14 @@ internal/otidxcli/root.go:33:5: maybePrintViz(cmd)
 {"kind":"unit","path":"internal/otidxcli/explain.go","range":{"sl":8,"sc":1,"el":12,"ec":1},"snippet":"func maybePrintViz(cmd *cobra.Command) {","matches":[{"line":10,"col":6,"text":"func maybePrintViz(cmd *cobra.Command) {"}]}
 ```
 
-拿到 `path + range.sl/range.el` 后，你可以在本地直接取出对应代码块：
+加上 `--show` 会把单元块内容写入 JSON 的 `text` 字段：
+
+```powershell
+> .\.otidx\bin\otidx.exe q "maybePrintViz" --jsonl --show --unit line -c 2 | Select-Object -First 1
+{"kind":"unit","path":"internal/otidxcli/explain.go","range":{"sl":8,"sc":1,"el":12,"ec":1},"snippet":"func maybePrintViz(cmd *cobra.Command) {","text":")\n\nfunc maybePrintViz(cmd *cobra.Command) {\n\tif cmd == nil {\n\t\treturn","matches":[{"line":10,"col":6,"text":"func maybePrintViz(cmd *cobra.Command) {"}]}
+```
+
+拿到 `path + range.sl/range.el` 后，你也可以在本地直接取出对应代码块：
 
 ```powershell
 # 示例：取出 internal/otidxcli/explain.go 的 8..12 行
@@ -161,6 +195,7 @@ Get-Content -LiteralPath .\internal\otidxcli\explain.go |
 
 - `-L`：vim 友好行：`path:line:col: snippet`
 - `--jsonl`：每行一个 JSON（包含 `range {sl,sc,el,ec}`，适合脚本/agent）
+- `--show`：打印单元块源码（多行；命中行用 `>` 标记；与 `--jsonl` 搭配会写入 `text` 字段）
 - `--explain`：在 stderr 输出执行信息（db、过滤条件、命中数、unit 决策等）
 - `--viz ascii`：在 stderr 打印固定的 ASCII 管线图（调试）
 
