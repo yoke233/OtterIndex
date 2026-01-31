@@ -28,6 +28,16 @@ type File struct {
 	Hash        string
 }
 
+type Chunk struct {
+	Path        string
+	SL          int
+	EL          int
+	Kind        string
+	Title       string
+	Text        string
+	WorkspaceID string
+}
+
 func Open(dbPath string) (*Store, error) {
 	if strings.TrimSpace(dbPath) == "" {
 		return nil, fmt.Errorf("dbPath is required")
@@ -58,6 +68,13 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) HasFTS() bool { return s != nil && s.hasFTS }
+
+func (s *Store) EnsureWorkspace(id string, root string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("store is not open")
+	}
+	return s.ensureWorkspace(id, root)
+}
 
 func (s *Store) UpsertFile(workspaceID string, path string, size int64, mtime int64) error {
 	if s == nil || s.db == nil {
@@ -121,6 +138,76 @@ func (s *Store) GetFile(workspaceID string, path string) (File, error) {
 	return f, nil
 }
 
+func (s *Store) ReplaceChunks(workspaceID string, path string, chunks []Chunk) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	path = filepath.ToSlash(path)
+	if workspaceID == "" {
+		return fmt.Errorf("workspaceID is required")
+	}
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("path is required")
+	}
+
+	if err := s.ensureWorkspace(workspaceID, ""); err != nil {
+		return err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`DELETE FROM chunks WHERE workspace_id = ? AND path = ?`, workspaceID, path); err != nil {
+		return err
+	}
+
+	for _, c := range chunks {
+		kind := strings.TrimSpace(c.Kind)
+		if kind == "" {
+			kind = "chunk"
+		}
+		title := c.Title
+		text := c.Text
+		if _, err := tx.Exec(
+			`INSERT INTO chunks (workspace_id, path, sl, el, kind, title, text)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			workspaceID,
+			path,
+			c.SL,
+			c.EL,
+			kind,
+			title,
+			text,
+		); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) CountChunks(workspaceID string) (int, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return 0, fmt.Errorf("workspaceID is required")
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM chunks WHERE workspace_id = ?`, workspaceID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (s *Store) init() error {
 	if _, err := s.db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
@@ -144,12 +231,38 @@ func (s *Store) init() error {
 
 func (s *Store) tryCreateFTS() error {
 	// FTS is optional: if the driver/build does not support fts5 we fall back later.
-	// We do not create triggers in MVP; the indexer can populate chunks_fts directly.
-	_, err := s.db.Exec(
+	stmts := []string{
 		`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
-		 USING fts5(text, path UNINDEXED, workspace_id UNINDEXED)`,
-	)
-	return err
+		 USING fts5(
+		   text,
+		   title,
+		   path UNINDEXED,
+		   workspace_id UNINDEXED,
+		   content='chunks',
+		   content_rowid='id'
+		 )`,
+		`CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id)
+		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id);
+		 END`,
+		`CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id)
+		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id);
+		 END`,
+		`CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id)
+		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id);
+		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id)
+		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id);
+		 END`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) ensureWorkspace(id string, root string) error {
