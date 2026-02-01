@@ -2,14 +2,15 @@
 
 更新时间：2026-01-31 22:48:17
 
-![外部项目速度对比](external-projects-vs-rg.svg)
-
 说明：
 - otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。
 - 数值为脚本取多次运行中的最小 wall time（ms）。repeat=3，limit=20。
+- 图表内 otidx 使用“查询耗时（wall - 加载）”；加载时间（索引构建）在图表顶部单独标注。
 - 当前 tree-sitter 只接入 Go；非 Go 工程里 `--unit symbol` 会自动降级（fallback）。
 
 ## Java / Spring（JeecgBoot - jeecg-boot）
+
+![Java / Spring 速度对比](external-projects-java.svg)
 
 - root: `D:\project\JeecgBoot\jeecg-boot`
 - db: `.otidx/ext/java-jeecg-boot.db`
@@ -26,6 +27,8 @@
 
 ## Vue/TS（JeecgBoot - jeecgboot-vue3）
 
+![Vue/TS 速度对比](external-projects-vue.svg)
+
 - root: `D:\project\JeecgBoot\jeecgboot-vue3`
 - db: `.otidx/ext/vue-jeecgboot-vue3.db`
 - include globs: `*.vue, *.ts, *.tsx, *.js, *.jsx, *.css, *.scss, *.json`
@@ -41,6 +44,8 @@
 
 ## Python（crawl4ai）
 
+![Python 速度对比](external-projects-python.svg)
+
 - root: `D:\project\crawl4ai`
 - db: `.otidx/ext/python-crawl4ai.db`
 - include globs: `*.py, *.toml, *.yml, *.yaml, *.md`
@@ -55,6 +60,8 @@
 | async def (symbol, fallback) | symbol | *.py | 2452 | 39 | symbol_fallback; unit_fallback=symbol->block |
 
 ## C/C++（gdmplab）
+
+![C/C++ 速度对比](external-projects-cpp.svg)
 
 - root: `D:\project\gdmplab`
 - db: `.otidx/ext/cpp-gdmplab.db`

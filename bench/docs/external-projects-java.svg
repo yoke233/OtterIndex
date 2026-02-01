@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="690" viewBox="0 0 820 690">
+<style>text{font-family:Segoe UI, Microsoft YaHei, Arial, sans-serif;}</style>
+<text x="80" y="36" font-size="20" fill="#222">Java / Spring（JeecgBoot - jeecg-boot）</text>
+<text x="80" y="60" font-size="12" fill="#666">2026-02-01 21:21:05</text>
+<rect x="560" y="20" width="220" height="44" fill="white" opacity="0.9"/>
+<rect x="568" y="30" width="14" height="14" fill="#4C78A8"/>
+<text x="588" y="42" font-size="12" fill="#222">otidx (ms)</text>
+<rect x="672" y="30" width="14" height="14" fill="#F58518"/>
+<text x="692" y="42" font-size="12" fill="#222">rg (ms)</text>
+<rect x="80" y="64" width="700" height="30" fill="white" opacity="0.85"/>
+<text x="82" y="84" font-size="12" fill="#444">加载时间(索引构建): 1223ms</text>
+<line x1="80" y1="520.00" x2="780" y2="520.00" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="524.00" font-size="11" text-anchor="end" fill="#555">0</text>
+<line x1="80" y1="450.07" x2="780" y2="450.07" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="454.07" font-size="11" text-anchor="end" fill="#555">173</text>
+<line x1="80" y1="380.13" x2="780" y2="380.13" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="384.13" font-size="11" text-anchor="end" fill="#555">346</text>
+<line x1="80" y1="310.20" x2="780" y2="310.20" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="314.20" font-size="11" text-anchor="end" fill="#555">519</text>
+<line x1="80" y1="240.27" x2="780" y2="240.27" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="244.27" font-size="11" text-anchor="end" fill="#555">692</text>
+<line x1="80" y1="170.34" x2="780" y2="170.34" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="174.34" font-size="11" text-anchor="end" fill="#555">865</text>
+<line x1="80" y1="100.00" x2="780" y2="100.00" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="104.00" font-size="11" text-anchor="end" fill="#555">1039</text>
+<line x1="80" y1="520" x2="780" y2="520" stroke="#444" stroke-width="1.2"/>
+<line x1="80" y1="100" x2="80" y2="520" stroke="#444" stroke-width="1.2"/>
+<rect x="103.00" y="154.98" width="42" height="365.02" fill="#4C78A8"/>
+<rect x="155.00" y="498.98" width="42" height="21.02" fill="#F58518"/>
+<text x="124.00" y="148.98" font-size="11" text-anchor="middle" fill="#222">903</text>
+<text x="176.00" y="492.98" font-size="11" text-anchor="middle" fill="#222">52</text>
+<text x="150.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 150.00 548.00)">throw new (line)</text>
+<rect x="243.00" y="245.93" width="42" height="274.07" fill="#4C78A8"/>
+<rect x="295.00" y="499.38" width="42" height="20.62" fill="#F58518"/>
+<text x="264.00" y="239.93" font-size="11" text-anchor="middle" fill="#222">678</text>
+<text x="316.00" y="493.38" font-size="11" text-anchor="middle" fill="#222">51</text>
+<text x="290.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 290.00 548.00)">public class (line)</text>
+<rect x="383.00" y="391.86" width="42" height="128.14" fill="#4C78A8"/>
+<rect x="435.00" y="488.47" width="42" height="31.53" fill="#F58518"/>
+<text x="404.00" y="385.86" font-size="11" text-anchor="middle" fill="#222">317</text>
+<text x="456.00" y="482.47" font-size="11" text-anchor="middle" fill="#222">78</text>
+<text x="430.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 430.00 548.00)">RequestMapping (line)</text>
+<rect x="523.00" y="444.41" width="42" height="75.59" fill="#4C78A8"/>
+<rect x="575.00" y="468.66" width="42" height="51.34" fill="#F58518"/>
+<text x="544.00" y="438.41" font-size="11" text-anchor="middle" fill="#222">187</text>
+<text x="596.00" y="462.66" font-size="11" text-anchor="middle" fill="#222">127</text>
+<text x="570.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 570.00 548.00)">RestController (line)</text>
+<rect x="663.00" y="454.11" width="42" height="65.89" fill="#4C78A8"/>
+<rect x="715.00" y="500.19" width="42" height="19.81" fill="#F58518"/>
+<text x="684.00" y="448.11" font-size="11" text-anchor="middle" fill="#222">163</text>
+<text x="736.00" y="494.19" font-size="11" text-anchor="middle" fill="#222">49</text>
+<text x="710.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 710.00 548.00)">RestController (symbol, fallback)</text>
+<text x="80" y="662" font-size="11" fill="#666">说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。图中 otidx 为查询 wall time。</text>
+</svg>

@@ -118,6 +118,27 @@ function Measure-Min {
   return $best
 }
 
+function Get-LoadStats {
+  param([Parameter(Mandatory)][int[]]$Values)
+  if (-not $Values -or $Values.Count -eq 0) {
+    return $null
+  }
+  $sorted = $Values | Sort-Object
+  $min = $sorted[0]
+  $max = $sorted[$sorted.Count - 1]
+  $mid = [int]([math]::Floor($sorted.Count / 2))
+  if ($sorted.Count % 2 -eq 1) {
+    $median = $sorted[$mid]
+  } else {
+    $median = [int][math]::Round(($sorted[$mid - 1] + $sorted[$mid]) / 2.0)
+  }
+  return [pscustomobject]@{
+    Min    = $min
+    Max    = $max
+    Median = $median
+  }
+}
+
 function Build-OtidxTreesitter {
   param([Parameter(Mandatory)][string]$OutPath)
 
@@ -261,6 +282,7 @@ Add-Line ""
 $projects = @(
   [pscustomobject]@{
     Key         = 'java-jeecg-boot'
+    ChartName   = 'java'
     Title       = 'Java / Spring（JeecgBoot - jeecg-boot）'
     Root        = 'D:\project\JeecgBoot\jeecg-boot'
     DbPath      = '.otidx/ext/java-jeecg-boot.db'
@@ -275,6 +297,7 @@ $projects = @(
   },
   [pscustomobject]@{
     Key         = 'vue-jeecgboot-vue3'
+    ChartName   = 'vue'
     Title       = 'Vue/TS（JeecgBoot - jeecgboot-vue3）'
     Root        = 'D:\project\JeecgBoot\jeecgboot-vue3'
     DbPath      = '.otidx/ext/vue-jeecgboot-vue3.db'
@@ -289,6 +312,7 @@ $projects = @(
   },
   [pscustomobject]@{
     Key         = 'python-crawl4ai'
+    ChartName   = 'python'
     Title       = 'Python（crawl4ai）'
     Root        = 'D:\project\crawl4ai'
     DbPath      = '.otidx/ext/python-crawl4ai.db'
@@ -303,6 +327,7 @@ $projects = @(
   },
   [pscustomobject]@{
     Key         = 'cpp-gdmplab'
+    ChartName   = 'cpp'
     Title       = 'C/C++（gdmplab）'
     Root        = 'D:\project\gdmplab'
     DbPath      = '.otidx/ext/cpp-gdmplab.db'
@@ -325,6 +350,7 @@ $md += ''
 $md += '说明：'
 $md += '- otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。'
 $md += ('- 数值为脚本取多次运行中的最小 wall time（ms）。repeat={0}，limit={1}。' -f $Repeat, $Limit)
+$md += '- 图表内 otidx 使用“查询耗时（wall - 加载）”；加载时间在图表顶部单独标注。'
 $md += '- 当前 tree-sitter 只接入 Go；非 Go 工程里 `--unit symbol` 会自动降级（fallback）。'
 $md += ''
 
@@ -363,6 +389,7 @@ foreach ($p in $projects) {
 
     Add-Line ("--- {0} / index.build ---" -f $p.Key)
     Add-Line ("project: {0}" -f $p.Key)
+    Add-Line ("project_title: {0}" -f $p.Title)
     Add-Line ("root: {0}" -f $rootAbs)
     Add-Line ("db: {0}" -f $p.DbPath)
     Add-Line ("db_abs: {0}" -f $dbAbs)
@@ -385,6 +412,8 @@ foreach ($p in $projects) {
 
   $md += ('## {0}' -f $p.Title)
   $md += ''
+  $md += ('![{0} 速度对比](external-projects-{1}.svg)' -f $p.Title, $p.ChartName)
+  $md += ''
   $md += ('- root: `{0}`' -f $rootAbs)
   $md += ('- db: `{0}`' -f $p.DbPath)
   $md += ('- include globs: `{0}`' -f (($p.IncludeGlobs) -join ', '))
@@ -401,6 +430,7 @@ foreach ($p in $projects) {
   $md += '| case | unit | globs | otidx(ms) | rg(ms) | 说明 |'
   $md += '|---|---|---|---:|---:|---|'
 
+  $loadSamples = @()
   foreach ($c in $p.Cases) {
     $otArgs = @('--no-banner', '--database', $dbAbs, '--explain=json', 'q', $c.Query, '--unit', $c.Unit, '--limit', "$Limit", '--compact')
     foreach ($g in $c.Globs) {
@@ -424,6 +454,7 @@ foreach ($p in $projects) {
 
     Add-Line ("--- {0} / {1} ---" -f $p.Key, $c.Name)
     Add-Line ("project: {0}" -f $p.Key)
+    Add-Line ("project_title: {0}" -f $p.Title)
     Add-Line ("root: {0}" -f $rootAbs)
     Add-Line ("db: {0}" -f $p.DbPath)
     Add-Line ("db_abs: {0}" -f $dbAbs)
@@ -431,6 +462,8 @@ foreach ($p in $projects) {
     Add-Line ("query: {0}" -f $c.Query)
     Add-Line ("otidx_wall_ms_min: {0}" -f $otBest.WallMs)
     if ($ex) {
+      $totalMs = Get-PropValue -Obj $ex -Name 'elapsed_ms_total'
+      if ($totalMs -ne $null) { Add-Line ("otidx_ex_elapsed_ms_total: {0}" -f $totalMs) }
       $t = Get-PropValue -Obj $ex -Name 'timings_ms'
       foreach ($k in @('sql', 'match', 'unitize', 'symbol', 'file_read')) {
         $v = Get-PropValue -Obj $t -Name $k
@@ -445,7 +478,24 @@ foreach ($p in $projects) {
     Add-Line ("rg_lines_returned: {0}" -f $rgBest.Count)
     Add-Line ""
 
+    if ($ex) {
+      $totalMs = Get-PropValue -Obj $ex -Name 'elapsed_ms_total'
+      if ($totalMs -ne $null) {
+        $load = [int]$otBest.WallMs - [int]$totalMs
+        if ($load -lt 0) { $load = 0 }
+        $loadSamples += $load
+      }
+    }
+
     $md += ('| {0} | {1} | {2} | {3} | {4} | {5} |' -f $c.Name, $c.Unit, (($c.Globs) -join ', '), $otBest.WallMs, $rgBest.WallMs, $note)
+  }
+
+  if ($loadSamples.Count -gt 0) {
+    $stats = Get-LoadStats -Values $loadSamples
+    if ($stats) {
+      $md += ''
+      $md += ('- 加载时间（otidx wall - query）：中位 {0}ms（min {1} / max {2}）' -f $stats.Median, $stats.Min, $stats.Max)
+    }
   }
 
   $md += ''
@@ -453,22 +503,16 @@ foreach ($p in $projects) {
 
 Set-Content -LiteralPath $resultPath -Value $lines -Encoding UTF8
 
-$svgPath = Join-Path (Split-Path -Parent $MdPath) 'external-projects-vs-rg.svg'
+$svgDir = Split-Path -Parent $MdPath
+$svgPath = if ($svgDir) { Join-Path $svgDir 'external-projects-vs-rg.svg' } else { 'external-projects-vs-rg.svg' }
 try {
   if (Get-Command python -ErrorAction SilentlyContinue) {
-    Write-Step '生成 SVG 图表（无依赖）'
-    python (Join-Path $PSScriptRoot 'plot_bench_svg.py') --in $resultPath --out $svgPath | Out-Null
-    $img = ('![外部项目速度对比]({0})' -f (Split-Path -Leaf $svgPath))
-    if ($md.Count -ge 4) {
-      $head = @($md[0..3])
-      $tail = @()
-      if ($md.Count -gt 4) {
-        $tail = @($md[4..($md.Count-1)])
-      }
-      $md = @($head) + @($img, '') + @($tail)
-    } else {
-      $md += $img
-      $md += ''
+    if ($svgDir) { New-Item -ItemType Directory -Path $svgDir -Force | Out-Null }
+    foreach ($p in $projects) {
+      $outName = 'external-projects-{0}.svg' -f $p.ChartName
+      $outPath = if ($svgDir) { Join-Path $svgDir $outName } else { $outName }
+      Write-Step ("生成 SVG 图表：{0}" -f $p.Key)
+      python (Join-Path $PSScriptRoot 'plot_bench_svg.py') --in $resultPath --out $outPath --project $p.Key | Out-Null
     }
   } else {
     Write-Host '未找到 python，跳过生成 SVG。' -ForegroundColor Yellow

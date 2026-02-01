@@ -203,7 +203,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-vs-rg.ps1 -Rebuild -
 python .\bench\plot_bench_svg.py --out .\bench\docs\bench-vs-rg.svg
 ```
 
-外部项目（Java/Vue/Python/C++）对比见：`bench/docs/external-projects.md`（会生成对应 SVG：`bench/docs/external-projects-vs-rg.svg`）。
+外部项目（Java/Vue/Python/C++）对比见：`bench/docs/external-projects.md`（会按语言生成 SVG：`bench/docs/external-projects-java.svg` / `bench/docs/external-projects-vue.svg` / `bench/docs/external-projects-python.svg` / `bench/docs/external-projects-cpp.svg`；图表内 otidx 为查询耗时，加载时间单独标注）。
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-external-projects.ps1 -Limit 20 -Repeat 3

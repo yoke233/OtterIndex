@@ -10,11 +10,41 @@ from typing import Optional
 @dataclass(frozen=True)
 class Case:
     name: str
-    otidx_ms: int
+    project: str
+    project_title: str
+    otidx_wall_ms: int
     rg_ms: int
+    otidx_query_ms: Optional[int]
+    load_ms: Optional[int]
 
 
-def parse_result_file(path: str) -> tuple[dict[str, str], list[Case]]:
+def _parse_int(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _case_name(section_name: str) -> str:
+    if " / " in section_name:
+        return section_name.split(" / ", 1)[1].strip()
+    return section_name.strip()
+
+
+def _project_name(section_name: str, kv: dict[str, str]) -> str:
+    proj = kv.get("project", "").strip()
+    if proj:
+        return proj
+    if " / " in section_name:
+        return section_name.split(" / ", 1)[0].strip()
+    return ""
+
+
+def parse_result_file(
+    path: str,
+) -> tuple[dict[str, str], list[Case], dict[str, int], dict[str, str]]:
     header: dict[str, str] = {}
     section: Optional[str] = None
     sections: dict[str, dict[str, str]] = {}
@@ -46,17 +76,55 @@ def parse_result_file(path: str) -> tuple[dict[str, str], list[Case]]:
                 sections[section][key] = value
 
     cases: list[Case] = []
+    build_ms: dict[str, int] = {}
+    titles: dict[str, str] = {}
     for name, kv in sections.items():
+        project = _project_name(name, kv)
+        project_title = kv.get("project_title", "").strip()
+        if project_title:
+            titles[project] = project_title
+
+        wall_ms = _parse_int(kv.get("wall_ms_min"))
+        if wall_ms is not None and name.endswith("index.build"):
+            if project:
+                build_ms[project] = wall_ms
+            continue
+
         if "otidx_wall_ms_min" not in kv or "rg_wall_ms_min" not in kv:
             continue
-        try:
-            otidx_ms = int(kv["otidx_wall_ms_min"])
-            rg_ms = int(kv["rg_wall_ms_min"])
-        except ValueError:
-            continue
-        cases.append(Case(name=name, otidx_ms=otidx_ms, rg_ms=rg_ms))
 
-    return header, cases
+        otidx_wall = _parse_int(kv.get("otidx_wall_ms_min"))
+        rg_ms = _parse_int(kv.get("rg_wall_ms_min"))
+        if otidx_wall is None or rg_ms is None:
+            continue
+
+        otidx_query = _parse_int(kv.get("otidx_ex_elapsed_ms_total"))
+        if otidx_query is None:
+            sql = _parse_int(kv.get("otidx_ex_elapsed_ms_sql")) or 0
+            match = _parse_int(kv.get("otidx_ex_elapsed_ms_match")) or 0
+            unitize = _parse_int(kv.get("otidx_ex_elapsed_ms_unitize")) or 0
+            symbol = _parse_int(kv.get("otidx_ex_elapsed_ms_symbol")) or 0
+            file_read = _parse_int(kv.get("otidx_ex_elapsed_ms_file_read")) or 0
+            if any(v > 0 for v in (sql, match, unitize, symbol, file_read)):
+                otidx_query = sql + match + unitize + symbol + file_read
+
+        load_ms = None
+        if otidx_query is not None:
+            load_ms = max(0, otidx_wall - otidx_query)
+
+        cases.append(
+            Case(
+                name=_case_name(name),
+                project=project,
+                project_title=project_title,
+                otidx_wall_ms=otidx_wall,
+                rg_ms=rg_ms,
+                otidx_query_ms=otidx_query,
+                load_ms=load_ms,
+            )
+        )
+
+    return header, cases, build_ms, titles
 
 
 def find_latest_result_file(root: str) -> Optional[str]:
@@ -88,18 +156,36 @@ def _xml_escape(s: str) -> str:
     )
 
 
-def render_svg(header: dict[str, str], cases: list[Case]) -> str:
-    cases = sorted(cases, key=lambda c: max(c.otidx_ms, c.rg_ms), reverse=True)
+def _median(values: list[int]) -> int:
+    values = sorted(values)
+    if not values:
+        return 0
+    mid = len(values) // 2
+    if len(values) % 2 == 1:
+        return values[mid]
+    return int(round((values[mid - 1] + values[mid]) / 2))
+
+
+def render_svg(
+    header: dict[str, str],
+    cases: list[Case],
+    title_override: str = "",
+    build_ms: Optional[int] = None,
+) -> str:
+    def otidx_plot(c: Case) -> int:
+        return c.otidx_query_ms if c.otidx_query_ms is not None else c.otidx_wall_ms
+
+    cases = sorted(cases, key=lambda c: max(otidx_plot(c), c.rg_ms), reverse=True)
     if not cases:
         raise ValueError("no cases")
 
-    max_ms = max(max(c.otidx_ms, c.rg_ms) for c in cases)
+    max_ms = max(max(otidx_plot(c), c.rg_ms) for c in cases)
     max_ms = max(max_ms, 1)
 
     # Layout
     margin_left = 80
     margin_right = 40
-    margin_top = 80
+    margin_top = 100
     margin_bottom = 170
 
     group_w = 140
@@ -130,7 +216,7 @@ def render_svg(header: dict[str, str], cases: list[Case]) -> str:
 
     result_file = header.get("result_file", "")
     rg_version = header.get("rg_version", "")
-    title = "otidx vs rg 速度对比（ms，越低越快）"
+    title = title_override or "otidx vs rg 速度对比（ms，越低越快）"
     subtitle = header.get("time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     if rg_version:
         subtitle += f" | {rg_version}"
@@ -155,18 +241,42 @@ def render_svg(header: dict[str, str], cases: list[Case]) -> str:
         f'<text x="{margin_left}" y="60" font-size="12" fill="#666">{_xml_escape(subtitle)}</text>'
     )
 
+    has_query_ms = any(c.otidx_query_ms is not None for c in cases)
+    otidx_label = "otidx 查询（扣加载）" if has_query_ms else "otidx (ms)"
+
     # Legend
     legend_x = width - margin_right - 220
     legend_y = 30
     parts.append(f'<rect x="{legend_x}" y="{legend_y-10}" width="220" height="44" fill="white" opacity="0.9"/>')
     parts.append(f'<rect x="{legend_x+8}" y="{legend_y}" width="14" height="14" fill="{c_otidx}"/>')
     parts.append(
-        f'<text x="{legend_x+28}" y="{legend_y+12}" font-size="12" fill="{c_text}">otidx (ms)</text>'
+        f'<text x="{legend_x+28}" y="{legend_y+12}" font-size="12" fill="{c_text}">{_xml_escape(otidx_label)}</text>'
     )
     parts.append(f'<rect x="{legend_x+112}" y="{legend_y}" width="14" height="14" fill="{c_rg}"/>')
     parts.append(
         f'<text x="{legend_x+132}" y="{legend_y+12}" font-size="12" fill="{c_text}">rg (ms)</text>'
     )
+
+    load_values = [c.load_ms for c in cases if c.load_ms is not None]
+    if load_values or build_ms is not None:
+        info_x = margin_left
+        info_y = 78
+        parts.append(
+            f'<rect x="{info_x}" y="{info_y-14}" width="{width - margin_left - margin_right}" height="30" fill="white" opacity="0.85"/>'
+        )
+        info = []
+        if load_values:
+            info.append(
+                "加载时间(otidx wall - query): 中位 {0}ms (min {1} / max {2})".format(
+                    _median(load_values), min(load_values), max(load_values)
+                )
+            )
+        if build_ms is not None:
+            info.append(f"加载时间(索引构建): {build_ms}ms")
+        info_text = " | ".join(info)
+        parts.append(
+            f'<text x="{info_x+2}" y="{info_y+6}" font-size="12" fill="#444">{_xml_escape(info_text)}</text>'
+        )
 
     # Grid + y labels
     grid_lines = 6
@@ -196,7 +306,8 @@ def render_svg(header: dict[str, str], cases: list[Case]) -> str:
         x_ot = gx + (group_w - (2 * bar_w + gap)) / 2
         x_rg = x_ot + bar_w + gap
 
-        h_ot = h_for(c.otidx_ms)
+        otidx_ms = otidx_plot(c)
+        h_ot = h_for(otidx_ms)
         h_rg = h_for(c.rg_ms)
         y_ot = base_y - h_ot
         y_rg = base_y - h_rg
@@ -205,7 +316,7 @@ def render_svg(header: dict[str, str], cases: list[Case]) -> str:
         parts.append(f'<rect x="{x_rg:.2f}" y="{y_rg:.2f}" width="{bar_w}" height="{h_rg:.2f}" fill="{c_rg}"/>')
 
         parts.append(
-            f'<text x="{x_ot+bar_w/2:.2f}" y="{y_ot-6:.2f}" font-size="11" text-anchor="middle" fill="{c_text}">{c.otidx_ms}</text>'
+            f'<text x="{x_ot+bar_w/2:.2f}" y="{y_ot-6:.2f}" font-size="11" text-anchor="middle" fill="{c_text}">{otidx_ms}</text>'
         )
         parts.append(
             f'<text x="{x_rg+bar_w/2:.2f}" y="{y_rg-6:.2f}" font-size="11" text-anchor="middle" fill="{c_text}">{c.rg_ms}</text>'
@@ -220,7 +331,10 @@ def render_svg(header: dict[str, str], cases: list[Case]) -> str:
         )
 
     # Footer
-    footer = "说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。数值为脚本取多次运行中的最小 wall time（ms）。"
+    if has_query_ms:
+        footer = "说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。图中 otidx 为查询耗时（已扣除加载）。"
+    else:
+        footer = "说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。图中 otidx 为查询 wall time。"
     parts.append(
         f'<text x="{margin_left}" y="{height-28}" font-size="11" fill="#666">{_xml_escape(footer)}</text>'
     )
@@ -243,6 +357,12 @@ def main() -> int:
         default="",
         help="output svg path (default: bench/docs/bench-vs-rg.svg)",
     )
+    ap.add_argument(
+        "--project",
+        dest="project",
+        default="",
+        help="filter cases by project (external-projects)",
+    )
     args = ap.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -262,10 +382,21 @@ def main() -> int:
     if not os.path.isabs(out_path):
         out_path = os.path.join(os.getcwd(), out_path)
 
-    header, cases = parse_result_file(in_path)
+    header, cases, build_ms, titles = parse_result_file(in_path)
     header.setdefault("result_file", os.path.basename(in_path))
 
-    svg = render_svg(header, cases)
+    project = args.project.strip()
+    title_override = ""
+    build_time = None
+    if project:
+        cases = [c for c in cases if c.project == project]
+        title_override = titles.get(project, project)
+        build_time = build_ms.get(project)
+        if not cases:
+            print(f"找不到 project={project} 的 case", file=sys.stderr)
+            return 3
+
+    svg = render_svg(header, cases, title_override=title_override, build_ms=build_time)
     out_dir = os.path.dirname(out_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
