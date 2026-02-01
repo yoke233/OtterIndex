@@ -8,7 +8,8 @@ import (
 )
 
 type Debouncer struct {
-	delay time.Duration
+	delay     time.Duration
+	delayFunc func(count int) time.Duration
 
 	mu     sync.Mutex
 	timer  *time.Timer
@@ -24,6 +25,29 @@ func NewDebouncer(delay time.Duration) *Debouncer {
 		delay:  delay,
 		queued: map[string]struct{}{},
 	}
+}
+
+func (d *Debouncer) SetDelayFunc(fn func(count int) time.Duration) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	d.delayFunc = fn
+	d.mu.Unlock()
+}
+
+func (d *Debouncer) DelayFor(count int) time.Duration {
+	if d == nil {
+		return 0
+	}
+	if d.delayFunc == nil {
+		return d.delay
+	}
+	delay := d.delayFunc(count)
+	if delay <= 0 {
+		return d.delay
+	}
+	return delay
 }
 
 func (d *Debouncer) OnFire(fn func(paths []string)) {
@@ -46,10 +70,11 @@ func (d *Debouncer) Push(path string) {
 
 	d.mu.Lock()
 	d.queued[path] = struct{}{}
+	delay := d.DelayFor(len(d.queued))
 	if d.timer != nil {
 		_ = d.timer.Stop()
 	}
-	d.timer = time.AfterFunc(d.delay, d.fire)
+	d.timer = time.AfterFunc(delay, d.fire)
 	d.mu.Unlock()
 }
 
@@ -71,4 +96,3 @@ func (d *Debouncer) fire() {
 	sort.Strings(paths)
 	fn(paths)
 }
-

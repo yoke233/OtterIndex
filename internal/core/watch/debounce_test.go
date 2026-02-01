@@ -5,17 +5,26 @@ import (
 	"time"
 )
 
-func TestDebounce_Coalesces(t *testing.T) {
+func TestDebouncerDelayFor_Adaptive(t *testing.T) {
 	d := NewDebouncer(200 * time.Millisecond)
-	got := 0
-	d.OnFire(func(paths []string) { got = len(paths) })
+	d.SetDelayFunc(func(count int) time.Duration {
+		switch {
+		case count <= 10:
+			return 50 * time.Millisecond
+		case count <= 100:
+			return 100 * time.Millisecond
+		default:
+			return 200 * time.Millisecond
+		}
+	})
 
-	d.Push("a.go")
-	d.Push("a.go")
-	time.Sleep(350 * time.Millisecond)
-
-	if got != 1 {
-		t.Fatalf("expected 1, got %d", got)
+	if got := d.DelayFor(5); got != 50*time.Millisecond {
+		t.Fatalf("delay for 5: %v", got)
+	}
+	if got := d.DelayFor(50); got != 100*time.Millisecond {
+		t.Fatalf("delay for 50: %v", got)
+	}
+	if got := d.DelayFor(500); got != 200*time.Millisecond {
+		t.Fatalf("delay for 500: %v", got)
 	}
 }
-

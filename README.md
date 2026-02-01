@@ -292,11 +292,12 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
 - `query`（`workspace_id/q` 必填，`unit/limit/offset/context_lines/case_insensitive/include_globs/exclude_globs/show` 可选）
   - 默认：`unit=block`，`limit=20`，`offset=0`，`context_lines=0`，`show=false`
   - `show=true` 会附加 `ResultItem.text`
-- `watch.start` / `watch.stop` / `watch.status`（`workspace_id` 必填，可选 `scan_all/include_globs/exclude_globs/sync_on_start/debounce_ms/sync_workers`）
+- `watch.start` / `watch.stop` / `watch.status`（`workspace_id` 必填，可选 `scan_all/include_globs/exclude_globs/sync_on_start/debounce_ms/sync_workers/adaptive_debounce/debounce_min_ms/debounce_max_ms`）
   - 返回 `{ "running": true|false }`
   - `sync_on_start=true` 会在启动时做一次“全目录遍历 + 仅更新变更文件”的补扫（默认并发为 CPU 核心数的一半）
   - `debounce_ms` 控制 watcher 防抖延迟（默认 200ms）
   - `sync_workers` 控制补扫并发数（默认 CPU 核心数的一半）
+  - `adaptive_debounce=true` 时根据变更量动态调整防抖（默认区间 50-500ms，可用 `debounce_min_ms/debounce_max_ms` 覆盖）
 
 示例请求/响应：
 

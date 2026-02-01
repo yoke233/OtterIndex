@@ -3,7 +3,12 @@ param(
     [string]$Listen = "",
     [string]$Query = "TODO",
     [switch]$Show,
-    [int]$SampleMs = 200
+    [int]$SampleMs = 200,
+    [int]$DebounceMs = 0,
+    [switch]$AdaptiveDebounce,
+    [int]$DebounceMinMs = 0,
+    [int]$DebounceMaxMs = 0,
+    [int]$SyncWorkers = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -211,10 +216,16 @@ try {
     $id++
 
     $sync = Measure-Phase -Name "watch.start(sync_on_start)" -TargetPid $serverProc.Id -SampleMs $SampleMs -Action {
-        $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "watch.start" -Params @{
+        $params = @{
             workspace_id  = $wsid
             sync_on_start = $true
         }
+        if ($DebounceMs -gt 0) { $params.debounce_ms = $DebounceMs }
+        if ($AdaptiveDebounce) { $params.adaptive_debounce = $true }
+        if ($DebounceMinMs -gt 0) { $params.debounce_min_ms = $DebounceMinMs }
+        if ($DebounceMaxMs -gt 0) { $params.debounce_max_ms = $DebounceMaxMs }
+        if ($SyncWorkers -gt 0) { $params.sync_workers = $SyncWorkers }
+        $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "watch.start" -Params $params
     }
     $id++
 

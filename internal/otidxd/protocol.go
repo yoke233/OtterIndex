@@ -34,7 +34,7 @@ type IndexBuildParams struct {
 }
 
 type QueryParams struct {
-	WorkspaceID      string   `json:"workspace_id"`
+	WorkspaceID     string   `json:"workspace_id"`
 	Q               string   `json:"q"`
 	Unit            string   `json:"unit,omitempty"`
 	Limit           int      `json:"limit,omitempty"`
@@ -47,13 +47,16 @@ type QueryParams struct {
 }
 
 type WatchStartParams struct {
-	WorkspaceID  string   `json:"workspace_id"`
-	ScanAll      bool     `json:"scan_all,omitempty"`
-	IncludeGlobs []string `json:"include_globs,omitempty"`
-	ExcludeGlobs []string `json:"exclude_globs,omitempty"`
-	SyncOnStart  bool     `json:"sync_on_start,omitempty"`
-	DebounceMS   int      `json:"debounce_ms,omitempty"`
-	SyncWorkers  int      `json:"sync_workers,omitempty"`
+	WorkspaceID      string   `json:"workspace_id"`
+	ScanAll          bool     `json:"scan_all,omitempty"`
+	IncludeGlobs     []string `json:"include_globs,omitempty"`
+	ExcludeGlobs     []string `json:"exclude_globs,omitempty"`
+	SyncOnStart      bool     `json:"sync_on_start,omitempty"`
+	DebounceMS       int      `json:"debounce_ms,omitempty"`
+	SyncWorkers      int      `json:"sync_workers,omitempty"`
+	AdaptiveDebounce bool     `json:"adaptive_debounce,omitempty"`
+	DebounceMinMS    int      `json:"debounce_min_ms,omitempty"`
+	DebounceMaxMS    int      `json:"debounce_max_ms,omitempty"`
 }
 
 type WatchStopParams struct {

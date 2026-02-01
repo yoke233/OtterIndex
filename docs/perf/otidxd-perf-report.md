@@ -32,11 +32,19 @@ Target: D:\project\crawl4ai
 - watch.start(sync_on_start): 229.58
 - watch.update+query: 2,115.36
 
+### After Optimization 3 (single writer + batch tx)
+- ping: 9.37
+- index.build: 1,320.98
+- query: 422.77
+- watch.start(sync_on_start): 149.27
+- watch.update+query: 2,668.67
+
 ## Interpretation
 - sync_on_start speedup is real (~49% faster), due to DB meta prefetch + per-worker store reuse + delete handling.
 - query improved vs baseline (~31%).
 - watch.update+query is still the largest latency contributor; sensitive to debounce + disk/SQLite locks.
 - index.build is I/O bound; small variance is expected on Windows.
+- single-writer + batch transaction improves sync_on_start latency, but may increase update+query tail latency under heavy watch churn (trade-off).
 
 ## CPU / Memory Snapshot (single run)
 - ping: ~8.52 MB WS, 13.13 MB private, CPU ~0.03s
@@ -44,6 +52,13 @@ Target: D:\project\crawl4ai
 - query: ~21.14 MB WS, 24.02 MB private, CPU ~1.80s
 - watch.start(sync_on_start): ~38.94 MB WS, 41.86 MB private, CPU ~1.88s
 - watch.update+query: ~41.41 MB WS, 44.11 MB private, CPU ~3.70s
+
+## CPU / Memory Snapshot (single run, Optimization 3)
+- ping: ~8.60 MB WS, 13.05 MB private, CPU ~0.00s
+- index.build: ~63.88 MB WS, 73.16 MB private, CPU ~1.19s
+- query: ~20.52 MB WS, 22.85 MB private, CPU ~1.73s
+- watch.start(sync_on_start): ~34.23 MB WS, 36.66 MB private, CPU ~2.05s
+- watch.update+query: ~36.93 MB WS, 39.41 MB private, CPU ~4.89s
 
 Notes:
 - ping is too short to sample accurately; values are best-effort.
@@ -53,6 +68,8 @@ Notes:
 - watch.start.sync_on_start: boolean (default false)
 - watch.start.sync_workers: default CPU/2, capped 1..NumCPU
 - watch.start.debounce_ms: default 200ms
+- watch.start.adaptive_debounce: default false
+- watch.start.debounce_min_ms / debounce_max_ms: default 50/500 when adaptive
 - query.show: if true, adds file read cost
 - treesitter: enabled via build tag; increases indexing cost
 
@@ -63,9 +80,33 @@ Notes:
 - Use query.show=false for latency-critical queries; fetch text on demand.
 - For very large repos, plan for initial index.build to be I/O bound; ensure SSD and reduce antivirus scanning on worktree.
 - If treesitter is enabled, expect higher indexing CPU cost; disable for fastest indexing.
- - Memory scales with chunk/symbol volume; large repos will grow SQLite and process working set. Consider higher OS file cache and avoid huge show payloads.
+- Memory scales with chunk/symbol volume; large repos will grow SQLite and process working set. Consider higher OS file cache and avoid huge show payloads.
 
 ## Next Steps (optional)
-- Add batching/transaction pipeline for UpdateFile to reduce SQLite write-lock contention.
-- Add adaptive debounce (higher under heavy churn, lower when idle).
 - Add fsnotify event coalescing for large file bursts.
+## Optimization 4 (single writer + batch tx, defaults)
+- ping: 9.37
+- index.build: 1,369.88
+- query: 566.90
+- watch.start(sync_on_start): 154.29
+- watch.update+query: 3,312.15
+
+## Optimization 4 (single writer + batch tx, show=true)
+- ping: 10.87
+- index.build: 1,577.46
+- query: 402.96
+- watch.start(sync_on_start): 152.97
+- watch.update+query: 2,595.08
+## Optimization 5 (adaptive debounce, min=50 max=500)
+- ping: 9.32
+- index.build: 1,296.63
+- query: 338.50
+- watch.start(sync_on_start): 145.57
+- watch.update+query: 2,248.54
+
+## CPU / Memory Snapshot (single run, Optimization 5)
+- ping: ~8.61 MB WS, 13.05 MB private, CPU ~0.03s
+- index.build: ~64.09 MB WS, 74.23 MB private, CPU ~1.22s
+- query: ~20.58 MB WS, 24.01 MB private, CPU ~1.66s
+- watch.start(sync_on_start): ~38.09 MB WS, 41.50 MB private, CPU ~1.95s
+- watch.update+query: ~40.98 MB WS, 44.36 MB private, CPU ~4.08s

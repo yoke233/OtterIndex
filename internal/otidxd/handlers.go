@@ -224,7 +224,12 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 		ScanAll:      p.ScanAll,
 		IncludeGlobs: p.IncludeGlobs,
 		ExcludeGlobs: p.ExcludeGlobs,
-	}, watch.Options{Debounce: debounceFromParams(p.DebounceMS)})
+	}, watch.Options{
+		Debounce:         debounceFromParams(p.DebounceMS),
+		AdaptiveDebounce: p.AdaptiveDebounce,
+		DebounceMin:      debounceFromParams(p.DebounceMinMS),
+		DebounceMax:      debounceFromParams(p.DebounceMaxMS),
+	})
 	if err != nil {
 		return WatchStatusResult{}, err
 	}
@@ -471,13 +476,15 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options, workers 
 		if isDBRel(rel, dbRel) {
 			continue
 		}
-		if err := deleteFileWithStore(s, workspaceID, rel); err != nil {
+		if err := s.DeleteFileAll(workspaceID, rel); err != nil {
 			return err
 		}
 	}
 
 	jobs := make(chan string)
+	plans := make(chan indexer.UpdatePlan)
 	var wg sync.WaitGroup
+	var writeWg sync.WaitGroup
 	var firstErr error
 	var once sync.Once
 
@@ -488,20 +495,33 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options, workers 
 		once.Do(func() { firstErr = err })
 	}
 
+	writeWg.Add(1)
+	go func() {
+		defer writeWg.Done()
+		writerStore, err := sqlite.Open(dbPath)
+		if err != nil {
+			setErr(err)
+			return
+		}
+		defer writerStore.Close()
+		if err := writerStore.EnsureWorkspace(workspaceID, rootAbs); err != nil {
+			setErr(err)
+			return
+		}
+		for plan := range plans {
+			if firstErr != nil {
+				continue
+			}
+			if err := indexer.ApplyUpdatePlan(writerStore, workspaceID, plan, nil); err != nil {
+				setErr(err)
+			}
+		}
+	}()
+
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			workerStore, err := sqlite.Open(dbPath)
-			if err != nil {
-				setErr(err)
-				return
-			}
-			defer workerStore.Close()
-			if err := workerStore.EnsureWorkspace(workspaceID, rootAbs); err != nil {
-				setErr(err)
-				return
-			}
 			for rel := range jobs {
 				if firstErr != nil {
 					continue
@@ -509,15 +529,21 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options, workers 
 				if isDBRel(rel, dbRel) {
 					continue
 				}
+				var plan indexer.UpdatePlan
+				var err error
 				if meta, ok := dbMeta[rel]; ok {
-					if err := indexer.UpdateFileWithStore(workerStore, rootAbs, rel, opts, &meta, true); err != nil {
-						setErr(err)
-					}
+					plan, err = indexer.PrepareUpdatePlan(rootAbs, rel, opts, &meta, true)
+				} else {
+					plan, err = indexer.PrepareUpdatePlan(rootAbs, rel, opts, nil, false)
+				}
+				if err != nil {
+					setErr(err)
 					continue
 				}
-				if err := indexer.UpdateFileWithStore(workerStore, rootAbs, rel, opts, nil, false); err != nil {
-					setErr(err)
+				if plan.Skip {
+					continue
 				}
+				plans <- plan
 			}
 		}()
 	}
@@ -530,6 +556,8 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options, workers 
 	}
 	close(jobs)
 	wg.Wait()
+	close(plans)
+	writeWg.Wait()
 
 	return firstErr
 }
@@ -544,21 +572,6 @@ func isDBRel(rel string, dbRel string) bool {
 	default:
 		return false
 	}
-}
-
-func deleteFileWithStore(s *sqlite.Store, workspaceID string, rel string) error {
-	if s == nil {
-		return fmt.Errorf("store is required")
-	}
-	if err := s.DeleteFile(workspaceID, rel); err != nil {
-		return err
-	}
-	if err := s.ReplaceChunksBatch(workspaceID, rel, nil); err != nil {
-		return err
-	}
-	_ = s.ReplaceSymbolsBatch(workspaceID, rel, nil)
-	_ = s.ReplaceCommentsBatch(workspaceID, rel, nil)
-	return s.BumpVersion(workspaceID)
 }
 
 func normalizeWorkers(workers int) int {

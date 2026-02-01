@@ -412,26 +412,9 @@ func UpdateFileWithStore(s *sqlite.Store, root string, rel string, opts Options,
 		return err
 	}
 
-	full := filepath.Join(root, filepath.FromSlash(rel))
-	st, err := os.Stat(full)
-	if err != nil {
-		if os.IsNotExist(err) {
-			_ = s.DeleteFile(workspaceID, rel)
-			if err := s.ReplaceChunksBatch(workspaceID, rel, nil); err != nil {
-				return err
-			}
-			_ = s.ReplaceSymbolsBatch(workspaceID, rel, nil)
-			_ = s.ReplaceCommentsBatch(workspaceID, rel, nil)
-			return s.BumpVersion(workspaceID)
-		}
-		return err
-	}
-
-	size := st.Size()
-	mtime := st.ModTime().Unix()
-
 	var meta sqlite.File
 	var ok bool
+	var err error
 	if oldOK && old != nil {
 		meta = *old
 		ok = true
@@ -441,59 +424,109 @@ func UpdateFileWithStore(s *sqlite.Store, root string, rel string, opts Options,
 			return err
 		}
 	}
-	if ok && meta.Size == size && meta.MTime == mtime {
-		return nil
+	plan, err := PrepareUpdatePlan(root, rel, opts, &meta, ok)
+	if err != nil {
+		return err
+	}
+	return ApplyUpdatePlan(s, workspaceID, plan, ex)
+}
+
+type UpdatePlan struct {
+	Rel    string
+	Size   int64
+	MTime  int64
+	Hash   string
+	Chunks []sqlite.ChunkInput
+	Syms   []sqlite.SymbolInput
+	Comms  []sqlite.CommentInput
+	Delete bool
+	Skip   bool
+}
+
+func PrepareUpdatePlan(root string, rel string, opts Options, old *sqlite.File, oldOK bool) (UpdatePlan, error) {
+	root = filepath.Clean(root)
+	if strings.TrimSpace(root) == "" {
+		return UpdatePlan{}, fmt.Errorf("root is required")
+	}
+
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	rel = strings.TrimPrefix(rel, "./")
+	if rel == "" || rel == "." {
+		return UpdatePlan{}, fmt.Errorf("rel path is required")
+	}
+
+	chunkLines := opts.ChunkLines
+	if chunkLines <= 0 {
+		chunkLines = 40
+	}
+	overlap := opts.ChunkOverlap
+	if overlap < 0 {
+		overlap = 0
+	}
+	step := chunkLines - overlap
+	if step <= 0 {
+		step = chunkLines
+	}
+
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	st, err := os.Stat(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return UpdatePlan{Rel: rel, Delete: true}, nil
+		}
+		return UpdatePlan{}, err
+	}
+
+	size := st.Size()
+	mtime := st.ModTime().Unix()
+
+	if oldOK && old != nil && old.Size == size && old.MTime == mtime {
+		return UpdatePlan{Rel: rel, Skip: true}, nil
 	}
 
 	b, err := os.ReadFile(full)
 	if err != nil {
-		return err
+		return UpdatePlan{}, err
 	}
 	if isBinary(b) {
-		_ = s.DeleteFile(workspaceID, rel)
-		if err := s.ReplaceChunksBatch(workspaceID, rel, nil); err != nil {
-			return err
-		}
-		_ = s.ReplaceSymbolsBatch(workspaceID, rel, nil)
-		_ = s.ReplaceCommentsBatch(workspaceID, rel, nil)
-		return s.BumpVersion(workspaceID)
+		return UpdatePlan{Rel: rel, Delete: true}, nil
 	}
 
 	hash := hashText(b)
-	if ok && meta.Hash != "" && meta.Hash == hash {
-		return nil
+	if oldOK && old != nil && old.Hash != "" && old.Hash == hash {
+		return UpdatePlan{Rel: rel, Skip: true}, nil
 	}
 
 	chunks := chunkByLines(string(b), chunkLines, step)
-
 	ts := treesitter.NewProvider()
 	syms, comms, _ := ts.Extract(rel, b)
+
+	return UpdatePlan{
+		Rel:    rel,
+		Size:   size,
+		MTime:  mtime,
+		Hash:   hash,
+		Chunks: chunks,
+		Syms:   syms,
+		Comms:  comms,
+	}, nil
+}
+
+func ApplyUpdatePlan(s *sqlite.Store, workspaceID string, plan UpdatePlan, ex explain.Explain) error {
+	if plan.Skip {
+		return nil
+	}
+	if plan.Delete {
+		return s.DeleteFileAll(workspaceID, plan.Rel)
+	}
 
 	stopWrite := func() {}
 	if ex != nil {
 		stopWrite = ex.Timer("write_one")
 	}
-	if err := s.UpsertFile(workspaceID, rel, size, mtime, hash); err != nil {
-		stopWrite()
-		return err
-	}
-	if err := s.ReplaceChunksBatch(workspaceID, rel, chunks); err != nil {
-		stopWrite()
-		return err
-	}
-	if err := s.ReplaceSymbolsBatch(workspaceID, rel, syms); err != nil {
-		stopWrite()
-		return err
-	}
-	if err := s.ReplaceCommentsBatch(workspaceID, rel, comms); err != nil {
-		stopWrite()
-		return err
-	}
+	err := s.ReplaceFileAll(workspaceID, plan.Rel, plan.Size, plan.MTime, plan.Hash, plan.Chunks, plan.Syms, plan.Comms)
 	stopWrite()
-	if err := s.BumpVersion(workspaceID); err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func chunkByLines(text string, chunkLines int, step int) []sqlite.ChunkInput {

@@ -32,7 +32,10 @@ type Watcher struct {
 }
 
 type Options struct {
-	Debounce time.Duration
+	Debounce         time.Duration
+	AdaptiveDebounce bool
+	DebounceMin      time.Duration
+	DebounceMax      time.Duration
 }
 
 func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, error) {
@@ -83,6 +86,17 @@ func NewWatcherWithOptions(root string, dbPath string, opts indexer.Options, wop
 	if debounce <= 0 {
 		debounce = 200 * time.Millisecond
 	}
+	minDelay := wopts.DebounceMin
+	if minDelay <= 0 {
+		minDelay = 50 * time.Millisecond
+	}
+	maxDelay := wopts.DebounceMax
+	if maxDelay <= 0 {
+		maxDelay = 500 * time.Millisecond
+	}
+	if maxDelay < minDelay {
+		maxDelay = minDelay
+	}
 
 	w := &Watcher{
 		rootAbs:     rootAbs,
@@ -94,6 +108,20 @@ func NewWatcherWithOptions(root string, dbPath string, opts indexer.Options, wop
 		debounce:    debounce,
 		watcher:     fsw,
 		closed:      make(chan struct{}),
+	}
+	if wopts.AdaptiveDebounce {
+		w.debouncer.SetDelayFunc(func(count int) time.Duration {
+			switch {
+			case count <= 10:
+				return minDelay
+			case count <= 100:
+				return minDelay * 2
+			case count <= 500:
+				return minDelay * 4
+			default:
+				return maxDelay
+			}
+		})
 	}
 	w.debouncer.OnFire(func(paths []string) {
 		for _, rel := range paths {
