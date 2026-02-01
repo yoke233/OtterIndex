@@ -192,6 +192,7 @@ type watcherEntry struct {
 	w      *watch.Watcher
 	cancel context.CancelFunc
 	done   chan struct{}
+	queue  *updateQueue
 }
 
 func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
@@ -204,6 +205,12 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}
 
 	wsid := strings.TrimSpace(p.WorkspaceID)
+	rootAbs := ws.root
+	if !filepath.IsAbs(rootAbs) {
+		if abs, err := filepath.Abs(rootAbs); err == nil {
+			rootAbs = abs
+		}
+	}
 
 	h.mu.Lock()
 	if existing, ok := h.watchers[wsid]; ok && existing != nil {
@@ -219,6 +226,13 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}
 	h.mu.Unlock()
 
+	uq := newUpdateQueue(rootAbs, ws.dbPath, wsid, indexer.Options{
+		WorkspaceID:  wsid,
+		ScanAll:      p.ScanAll,
+		IncludeGlobs: p.IncludeGlobs,
+		ExcludeGlobs: p.ExcludeGlobs,
+	})
+
 	w, err := watch.NewWatcherWithOptions(ws.root, ws.dbPath, indexer.Options{
 		WorkspaceID:  wsid,
 		ScanAll:      p.ScanAll,
@@ -229,6 +243,11 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 		AdaptiveDebounce: p.AdaptiveDebounce,
 		DebounceMin:      debounceFromParams(p.DebounceMinMS),
 		DebounceMax:      debounceFromParams(p.DebounceMaxMS),
+		UpdateFunc: func(paths []string) {
+			if uq != nil {
+				uq.Enqueue(paths)
+			}
+		},
 	})
 	if err != nil {
 		return WatchStatusResult{}, err
@@ -242,7 +261,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}()
 
 	h.mu.Lock()
-	h.watchers[wsid] = &watcherEntry{w: w, cancel: cancel, done: done}
+	h.watchers[wsid] = &watcherEntry{w: w, cancel: cancel, done: done, queue: uq}
 	h.mu.Unlock()
 
 	if p.SyncOnStart {
@@ -275,6 +294,9 @@ func (h *Handlers) WatchStop(p WatchStopParams) (WatchStatusResult, error) {
 	h.mu.Unlock()
 
 	if entry != nil {
+		if entry.queue != nil {
+			entry.queue.Close()
+		}
 		if entry.cancel != nil {
 			entry.cancel()
 		}
@@ -321,6 +343,9 @@ func (h *Handlers) Close() error {
 	for _, entry := range watchers {
 		if entry == nil {
 			continue
+		}
+		if entry.queue != nil {
+			entry.queue.Close()
 		}
 		if entry.cancel != nil {
 			entry.cancel()
@@ -596,4 +621,114 @@ func debounceFromParams(ms int) time.Duration {
 		return 0
 	}
 	return time.Duration(ms) * time.Millisecond
+}
+
+type updateQueue struct {
+	rootAbs     string
+	dbPath      string
+	opts        indexer.Options
+	workspaceID string
+
+	flushEvery time.Duration
+	maxBatch   int
+
+	mu      sync.Mutex
+	pending map[string]struct{}
+	ch      chan []string
+	done    chan struct{}
+	wg      sync.WaitGroup
+}
+
+func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts indexer.Options) *updateQueue {
+	q := &updateQueue{
+		rootAbs:     rootAbs,
+		dbPath:      dbPath,
+		opts:        opts,
+		workspaceID: workspaceID,
+		flushEvery:  100 * time.Millisecond,
+		maxBatch:    512,
+		pending:     map[string]struct{}{},
+		ch:          make(chan []string, 64),
+		done:        make(chan struct{}),
+	}
+	q.wg.Add(1)
+	go q.run()
+	return q
+}
+
+func (q *updateQueue) Enqueue(paths []string) {
+	if q == nil || len(paths) == 0 {
+		return
+	}
+	select {
+	case q.ch <- paths:
+	default:
+		q.mu.Lock()
+		for _, p := range paths {
+			q.pending[p] = struct{}{}
+		}
+		q.mu.Unlock()
+	}
+}
+
+func (q *updateQueue) Close() {
+	if q == nil {
+		return
+	}
+	close(q.done)
+	q.wg.Wait()
+}
+
+func (q *updateQueue) run() {
+	defer q.wg.Done()
+
+	store, err := sqlite.Open(q.dbPath)
+	if err != nil {
+		return
+	}
+	defer store.Close()
+	if err := store.EnsureWorkspace(q.workspaceID, q.rootAbs); err != nil {
+		return
+	}
+
+	ticker := time.NewTicker(q.flushEvery)
+	defer ticker.Stop()
+
+	flush := func() {
+		q.mu.Lock()
+		if len(q.pending) == 0 {
+			q.mu.Unlock()
+			return
+		}
+		paths := make([]string, 0, len(q.pending))
+		for p := range q.pending {
+			paths = append(paths, p)
+		}
+		q.pending = map[string]struct{}{}
+		q.mu.Unlock()
+
+		for _, rel := range paths {
+			_ = indexer.UpdateFileWithStore(store, q.rootAbs, rel, q.opts, nil, false)
+		}
+	}
+
+	for {
+		select {
+		case <-q.done:
+			flush()
+			return
+		case paths := <-q.ch:
+			q.mu.Lock()
+			for _, p := range paths {
+				q.pending[p] = struct{}{}
+			}
+			needFlush := len(q.pending) >= q.maxBatch
+			q.mu.Unlock()
+			if needFlush {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
+	}
 }

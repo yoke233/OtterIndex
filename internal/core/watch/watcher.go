@@ -36,6 +36,7 @@ type Options struct {
 	AdaptiveDebounce bool
 	DebounceMin      time.Duration
 	DebounceMax      time.Duration
+	UpdateFunc       func(paths []string)
 }
 
 func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, error) {
@@ -123,11 +124,15 @@ func NewWatcherWithOptions(root string, dbPath string, opts indexer.Options, wop
 			}
 		})
 	}
-	w.debouncer.OnFire(func(paths []string) {
-		for _, rel := range paths {
-			_ = indexer.UpdateFile(w.rootAbs, w.dbPath, rel, w.indexerOpts)
-		}
-	})
+	if wopts.UpdateFunc != nil {
+		w.debouncer.OnFire(wopts.UpdateFunc)
+	} else {
+		w.debouncer.OnFire(func(paths []string) {
+			for _, rel := range paths {
+				_ = indexer.UpdateFile(w.rootAbs, w.dbPath, rel, w.indexerOpts)
+			}
+		})
+	}
 
 	if err := w.addExistingDirs(); err != nil {
 		_ = fsw.Close()
