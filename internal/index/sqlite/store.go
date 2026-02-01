@@ -312,21 +312,17 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 	var rows *sql.Rows
 	var err error
 	if s.hasFTS {
-		includeSnippet := true
 		rows, err = s.db.Query(
-			`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text,
-			        snippet(chunks_fts, 0, '<<', '>>', '…', 16) AS snip
+			`SELECT path, sl, el, kind, title, text
 			 FROM chunks_fts
-			 JOIN chunks c ON c.id = chunks_fts.rowid
-			 WHERE chunks_fts MATCH ? AND c.workspace_id = ?
-			 ORDER BY c.path, c.sl, c.el
+			 WHERE chunks_fts MATCH ? AND workspace_id = ?
+			 ORDER BY path, sl, el
 			 LIMIT ?`,
 			keyword,
 			workspaceID,
 			limit,
 		)
 		if err != nil {
-			includeSnippet = false
 			rows, err = s.db.Query(
 				`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text
 				 FROM chunks_fts
@@ -348,14 +344,8 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 		for rows.Next() {
 			var c Chunk
 			c.WorkspaceID = workspaceID
-			if includeSnippet {
-				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text, &c.Snippet); err != nil {
-					return store.SearchResult{}, err
-				}
-			} else {
-				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
-					return store.SearchResult{}, err
-				}
+			if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
+				return store.SearchResult{}, err
 			}
 			out = append(out, c)
 		}
@@ -480,38 +470,87 @@ func (s *Store) init() error {
 
 func (s *Store) tryCreateFTS() error {
 	// FTS is optional: if the driver/build does not support fts5 we fall back later.
+	ok, err := hasFTSColumns(s.db)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+
 	stmts := []string{
+		`DROP TRIGGER IF EXISTS chunks_ai`,
+		`DROP TRIGGER IF EXISTS chunks_ad`,
+		`DROP TRIGGER IF EXISTS chunks_au`,
+		`DROP TABLE IF EXISTS chunks_fts`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
 		 USING fts5(
 		   text,
 		   title,
 		   path UNINDEXED,
 		   workspace_id UNINDEXED,
+		   kind UNINDEXED,
+		   sl UNINDEXED,
+		   el UNINDEXED,
 		   content='chunks',
 		   content_rowid='id'
 		 )`,
 		`CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
-		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id)
-		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id);
+		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id, new.kind, new.sl, new.el);
 		 END`,
 		`CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
-		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id)
-		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id);
+		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id, old.kind, old.sl, old.el);
 		 END`,
 		`CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
-		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id)
-		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id);
-		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id)
-		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id);
+		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id, old.kind, old.sl, old.el);
+		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id, new.kind, new.sl, new.el);
 		 END`,
 	}
-
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return err
 		}
 	}
+	_, _ = s.db.Exec(`INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')`)
 	return nil
+}
+
+func hasFTSColumns(db *sql.DB) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("db is nil")
+	}
+	rows, err := db.Query(`PRAGMA table_info(chunks_fts)`)
+	if err != nil {
+		return false, nil
+	}
+	defer rows.Close()
+
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dflt any
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	want := []string{"text", "title", "path", "workspace_id", "kind", "sl", "el"}
+	for _, name := range want {
+		if !cols[name] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (s *Store) ensureWorkspace(id string, root string) error {

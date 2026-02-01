@@ -23,6 +23,15 @@ Size: 844,607,815 bytes
 | watch.start(sync_on_start) | 159.70 | 42.80 | 45.07 | 1.16 |
 | watch.update+query | 1,384.13 | 48.25 | 50.43 | 2.41 |
 
+### Store: sqlite (optimized query path)
+| Phase | Duration ms | WS MB | Private MB | CPU s |
+| --- | ---: | ---: | ---: | ---: |
+| ping | 11.36 | 12.04 | 15.40 | 0.00 |
+| index.build | 933.71 | 61.98 | 70.44 | 1.03 |
+| query | 34.04 | 21.72 | 23.97 | 1.16 |
+| watch.start(sync_on_start) | 156.88 | 43.20 | 45.94 | 1.25 |
+| watch.update+query | 6.42 | 42.78 | 45.38 | 1.25 |
+
 ### Store: bleve
 - Timed out (index.build did not finish within ~4 minutes). Run aborted.
 
@@ -46,6 +55,7 @@ Size: 1,668,917,944 bytes
 - sqlite completes index.build quickly on both datasets in this environment.
 - watch.update+query is the longest phase for crawl4ai (large file count).
 - bleve indexing is substantially slower on these datasets; runs did not complete within 3-4 minutes.
+- sqlite query optimized by removing FTS snippet and avoiding chunk join; query latency dropped from ~96ms to ~34ms (crawl4ai).
 
 ## Tunable Parameters
 - watch.start.sync_on_start: boolean
