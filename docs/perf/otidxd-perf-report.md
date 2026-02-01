@@ -57,6 +57,15 @@ Size: 1,668,917,944 bytes
 | watch.start(sync_on_start) | 785.31 | 77.45 | 80.12 | 2.19 |
 | watch.update+query | 402.55 | 75.04 | 77.86 | 2.64 |
 
+### Store: sqlite (optimized query + early stop)
+| Phase | Duration ms | WS MB | Private MB | CPU s |
+| --- | ---: | ---: | ---: | ---: |
+| ping | 11.40 | 11.86 | 15.05 | 0.05 |
+| index.build | 1,411.30 | 79.70 | 91.13 | 1.41 |
+| query | 21.87 | 21.56 | 24.28 | 1.62 |
+| watch.start(sync_on_start) | 675.65 | 74.29 | 77.09 | 2.02 |
+| watch.update+query | 4.74 | 73.40 | 76.04 | 2.06 |
+
 ### Store: bleve
 - Timed out (index.build did not finish within ~3 minutes). Run aborted.
 
