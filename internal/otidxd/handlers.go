@@ -194,6 +194,7 @@ type watcherEntry struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	queue  *updateQueue
+	direct *directUpdater
 }
 
 func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
@@ -253,12 +254,47 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 
 	autoParams = applyAutoParams(p, autoParams)
 
-	uq := newUpdateQueue(rootAbs, ws.dbPath, wsid, indexer.Options{
-		WorkspaceID:  wsid,
-		ScanAll:      p.ScanAll,
-		IncludeGlobs: p.IncludeGlobs,
-		ExcludeGlobs: p.ExcludeGlobs,
-	}, tuning, autoParams.QueueMode)
+	var uq *updateQueue
+	var du *directUpdater
+	updateFunc := func(paths []string) {
+		for _, rel := range paths {
+			_ = indexer.UpdateFile(rootAbs, ws.dbPath, rel, indexer.Options{
+				WorkspaceID:  wsid,
+				ScanAll:      p.ScanAll,
+				IncludeGlobs: p.IncludeGlobs,
+				ExcludeGlobs: p.ExcludeGlobs,
+			})
+		}
+	}
+
+	if autoParams.QueueMode == "direct" {
+		du = newDirectUpdater(rootAbs, ws.dbPath, indexer.Options{
+			WorkspaceID:  wsid,
+			ScanAll:      p.ScanAll,
+			IncludeGlobs: p.IncludeGlobs,
+			ExcludeGlobs: p.ExcludeGlobs,
+		})
+		updateFunc = func(paths []string) {
+			if du == nil {
+				return
+			}
+			for _, rel := range paths {
+				_ = du.Update(rel)
+			}
+		}
+	} else {
+		uq = newUpdateQueue(rootAbs, ws.dbPath, wsid, indexer.Options{
+			WorkspaceID:  wsid,
+			ScanAll:      p.ScanAll,
+			IncludeGlobs: p.IncludeGlobs,
+			ExcludeGlobs: p.ExcludeGlobs,
+		}, tuning, autoParams.QueueMode)
+		updateFunc = func(paths []string) {
+			if uq != nil {
+				uq.Enqueue(paths)
+			}
+		}
+	}
 
 	w, err := watch.NewWatcherWithOptions(ws.root, ws.dbPath, indexer.Options{
 		WorkspaceID:  wsid,
@@ -270,11 +306,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 		AdaptiveDebounce: autoParams.AdaptiveDebounce,
 		DebounceMin:      debounceFromParams(autoParams.DebounceMinMS),
 		DebounceMax:      debounceFromParams(autoParams.DebounceMaxMS),
-		UpdateFunc: func(paths []string) {
-			if uq != nil {
-				uq.Enqueue(paths)
-			}
-		},
+		UpdateFunc:       updateFunc,
 	})
 	if err != nil {
 		return WatchStatusResult{}, err
@@ -288,7 +320,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}()
 
 	h.mu.Lock()
-	h.watchers[wsid] = &watcherEntry{w: w, cancel: cancel, done: done, queue: uq}
+	h.watchers[wsid] = &watcherEntry{w: w, cancel: cancel, done: done, queue: uq, direct: du}
 	h.mu.Unlock()
 
 	if autoParams.SyncOnStart {
@@ -323,6 +355,9 @@ func (h *Handlers) WatchStop(p WatchStopParams) (WatchStatusResult, error) {
 	if entry != nil {
 		if entry.queue != nil {
 			entry.queue.Close()
+		}
+		if entry.direct != nil {
+			entry.direct.Close()
 		}
 		if entry.cancel != nil {
 			entry.cancel()
@@ -373,6 +408,9 @@ func (h *Handlers) Close() error {
 		}
 		if entry.queue != nil {
 			entry.queue.Close()
+		}
+		if entry.direct != nil {
+			entry.direct.Close()
 		}
 		if entry.cancel != nil {
 			entry.cancel()
@@ -785,7 +823,8 @@ type updateQueue struct {
 	workspaceID string
 	mode        string
 
-	tuning updateQueueTuning
+	tuning      updateQueueTuning
+	rateEnabled bool
 
 	mu         sync.Mutex
 	pending    map[string]struct{}
@@ -825,6 +864,7 @@ func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts inde
 		workspaceID: workspaceID,
 		mode:        mode,
 		tuning:      tuning,
+		rateEnabled: mode == "priority",
 		pending:     map[string]struct{}{},
 		hot:         map[string]int{},
 		ch:          make(chan struct{}, 64),
@@ -958,7 +998,10 @@ func (q *updateQueue) run() {
 }
 
 func (q *updateQueue) desired(n int) (time.Duration, int) {
-	factor := q.rateFactor
+	factor := 1.0
+	if q.rateEnabled {
+		factor = q.rateFactor
+	}
 	if factor <= 0 {
 		factor = 1
 	}
@@ -1053,6 +1096,8 @@ func defaultQueueTuning() updateQueueTuning {
 
 func normalizeQueueMode(mode string) string {
 	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "direct":
+		return "direct"
 	case "simple":
 		return "simple"
 	case "priority":
@@ -1064,7 +1109,50 @@ func normalizeQueueMode(mode string) string {
 	}
 }
 
+type directUpdater struct {
+	rootAbs string
+	opts    indexer.Options
+	store   *sqlite.Store
+	mu      sync.Mutex
+}
+
+func newDirectUpdater(rootAbs string, dbPath string, opts indexer.Options) *directUpdater {
+	s, err := sqlite.Open(dbPath)
+	if err != nil {
+		return nil
+	}
+	if err := s.EnsureWorkspace(opts.WorkspaceID, rootAbs); err != nil {
+		_ = s.Close()
+		return nil
+	}
+	return &directUpdater{
+		rootAbs: rootAbs,
+		opts:    opts,
+		store:   s,
+	}
+}
+
+func (d *directUpdater) Update(rel string) error {
+	if d == nil || d.store == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return indexer.UpdateFileWithStore(d.store, d.rootAbs, rel, d.opts, nil, false)
+}
+
+func (d *directUpdater) Close() {
+	if d == nil || d.store == nil {
+		return
+	}
+	_ = d.store.Close()
+}
+
 func (q *updateQueue) adjustRate() {
+	if !q.rateEnabled {
+		q.rateFactor = 1
+		return
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
