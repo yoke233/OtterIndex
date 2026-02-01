@@ -110,3 +110,33 @@ Notes:
 - query: ~20.58 MB WS, 24.01 MB private, CPU ~1.66s
 - watch.start(sync_on_start): ~38.09 MB WS, 41.50 MB private, CPU ~1.95s
 - watch.update+query: ~40.98 MB WS, 44.36 MB private, CPU ~4.08s
+## PaddleOCR (default)
+Dataset:
+- Files: 1,930
+- Size: 1,668,917,944 bytes
+
+Timings (ms):
+- ping: 10.23
+- index.build: 1,918.95
+- query: 299.36
+- watch.start(sync_on_start): 660.85
+- watch.update+query: 1,601.75
+
+## PaddleOCR (adaptive debounce, min=50 max=500)
+Dataset:
+- Files: 1,931
+- Size: 1,694,980,792 bytes
+
+Timings (ms):
+- ping: 8.95
+- index.build: 2,100.63
+- query: 276.63
+- watch.start(sync_on_start): 673.10
+- watch.update+query: 1,974.15
+
+## PaddleOCR CPU / Memory Snapshot (default)
+- ping: ~8.94 MB WS, 13.07 MB private, CPU ~0.02s
+- index.build: ~85.49 MB WS, 96.45 MB private, CPU ~2.03s
+- query: ~22.95 MB WS, 25.44 MB private, CPU ~2.45s
+- watch.start(sync_on_start): ~81.33 MB WS, 84.34 MB private, CPU ~2.91s
+- watch.update+query: ~71.24 MB WS, 74.48 MB private, CPU ~5.36s
