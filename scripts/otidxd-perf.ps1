@@ -2,7 +2,10 @@ param(
     [string]$Root = ".",
     [string]$Listen = "",
     [string]$Query = "TODO",
+    [string]$Store = "sqlite",
     [switch]$Show,
+    [int]$StartTimeoutSec = 15,
+    [switch]$NoSyncOnStart,
     [int]$DebounceMs = 0,
     [switch]$AdaptiveDebounce,
     [int]$DebounceMinMs = 0,
@@ -60,8 +63,8 @@ function Send-Rpc {
 }
 
 function Wait-Server {
-    param([string]$Listen)
-    $deadline = (Get-Date).AddSeconds(5)
+    param([string]$Listen, [int]$TimeoutSec = 5)
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         try {
             $client = [System.Net.Sockets.TcpClient]::new()
@@ -101,6 +104,7 @@ $listenAddr = "$listenHost`:$listenPort"
 
 Write-Host "Root: $rootAbs"
 Write-Host "Listen: $listenAddr"
+Write-Host "Store: $Store"
 
 $fileStats = Get-ChildItem -LiteralPath $rootAbs -Recurse -File -Force |
     Measure-Object -Property Length -Sum
@@ -108,7 +112,7 @@ $fileStats = Get-ChildItem -LiteralPath $rootAbs -Recurse -File -Force |
 Write-Host ("Files: {0}, Size: {1:n0} bytes" -f $fileStats.Count, $fileStats.Sum)
 
 $serverProc = Start-Process -FilePath "go" -ArgumentList @("run", "./cmd/otidxd", "-listen", $listenAddr) -PassThru -WindowStyle Hidden
-if (-not (Wait-Server -Listen $listenAddr)) {
+if (-not (Wait-Server -Listen $listenAddr -TimeoutSec $StartTimeoutSec)) {
     try { $serverProc.Kill() } catch {}
     throw "failed to start otidxd"
 }
@@ -129,7 +133,7 @@ $client.Connect($listenHost, $listenPort)
     }).TotalMilliseconds
     $id++
 
-    $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "workspace.add" -Params @{ root = $rootAbs }
+    $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "workspace.add" -Params @{ root = $rootAbs; store = $Store }
     $wsid = $resp.result
     $id++
 
@@ -153,7 +157,7 @@ $client.Connect($listenHost, $listenPort)
     $syncMs = (Measure-Command {
         $params = @{
             workspace_id  = $wsid
-            sync_on_start = $true
+            sync_on_start = (-not $NoSyncOnStart)
         }
         if ($DebounceMs -gt 0) { $params.debounce_ms = $DebounceMs }
         if ($AdaptiveDebounce) { $params.adaptive_debounce = $true }
@@ -195,7 +199,9 @@ $client.Connect($listenHost, $listenPort)
     Write-Host ("  ping:        {0,8:n2}" -f $pingMs)
     Write-Host ("  index.build: {0,8:n2}" -f $buildMs)
     Write-Host ("  query:       {0,8:n2}" -f $queryMs)
-    Write-Host ("  watch.start(sync_on_start): {0,8:n2}" -f $syncMs)
+    $syncLabel = "watch.start(sync_on_start)"
+    if ($NoSyncOnStart) { $syncLabel = "watch.start(sync_on_start=false)" }
+    Write-Host ("  {0}: {1,8:n2}" -f $syncLabel, $syncMs)
     Write-Host ("  watch.update+query:         {0,8:n2}" -f $updateMs)
 }
 finally {

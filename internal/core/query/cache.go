@@ -54,6 +54,9 @@ func QueryWithCache(c *QueryCache, version int64, workspaceID string, q string, 
 func makeCacheKey(workspaceID string, version int64, q string, opts Options) string {
 	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "ws=%s|ver=%d|q=%s", workspaceID, version, q)
+	if storeName := strings.TrimSpace(opts.Store); storeName != "" {
+		_, _ = fmt.Fprintf(&b, "|store=%s", storeName)
+	}
 	_, _ = fmt.Fprintf(&b, "|unit=%s|i=%t", opts.Unit, opts.CaseInsensitive)
 	_, _ = fmt.Fprintf(&b, "|limit=%d|offset=%d", opts.Limit, opts.Offset)
 	_, _ = fmt.Fprintf(&b, "|ctx=%d", opts.ContextLines)

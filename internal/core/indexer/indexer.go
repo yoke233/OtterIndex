@@ -17,10 +17,12 @@ import (
 	"otterindex/internal/core/explain"
 	"otterindex/internal/core/treesitter"
 	"otterindex/internal/core/walk"
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/backend"
+	"otterindex/internal/index/store"
 )
 
 type Options struct {
+	Store        string
 	WorkspaceID  string
 	Workers      int
 	ScanAll      bool
@@ -52,6 +54,7 @@ func Build(root string, dbPath string, opts Options) error {
 
 	if ex != nil {
 		ex.KV("phase", "build")
+		ex.KV("store", opts.Store)
 		ex.KV("workspace_id", workspaceID)
 		ex.KV("root", root)
 		ex.KV("db_path", dbPath)
@@ -108,7 +111,7 @@ func Build(root string, dbPath string, opts Options) error {
 		ex.KV("chunk_step", step)
 	}
 
-	s, err := sqlite.Open(dbPath)
+	s, err := backend.Open(opts.Store, dbPath)
 	if err != nil {
 		return err
 	}
@@ -117,21 +120,25 @@ func Build(root string, dbPath string, opts Options) error {
 	if err := s.EnsureWorkspace(workspaceID, root); err != nil {
 		return err
 	}
-	if err := s.ApplyBuildPragmas(); err != nil {
-		return err
+	if applier, ok := s.(store.BuildPragmaApplier); ok {
+		if err := applier.ApplyBuildPragmas(); err != nil {
+			return err
+		}
 	}
 	if ex != nil {
 		ex.KV("fts5", s.HasFTS())
 		ex.KV("fts5_reason", s.FTSReason())
 
-		jm, _ := s.QueryPragma("journal_mode")
-		syncMode, _ := s.QueryPragma("synchronous")
-		tempStore, _ := s.QueryPragma("temp_store")
-		cacheSize, _ := s.QueryPragma("cache_size")
-		ex.KV("sqlite_journal_mode", jm)
-		ex.KV("sqlite_synchronous", syncMode)
-		ex.KV("sqlite_temp_store", tempStore)
-		ex.KV("sqlite_cache_size", cacheSize)
+		if pr, ok := s.(store.PragmaReader); ok {
+			jm, _ := pr.QueryPragma("journal_mode")
+			syncMode, _ := pr.QueryPragma("synchronous")
+			tempStore, _ := pr.QueryPragma("temp_store")
+			cacheSize, _ := pr.QueryPragma("cache_size")
+			ex.KV("sqlite_journal_mode", jm)
+			ex.KV("sqlite_synchronous", syncMode)
+			ex.KV("sqlite_temp_store", tempStore)
+			ex.KV("sqlite_cache_size", cacheSize)
+		}
 	}
 
 	stopWalk := func() {}
@@ -156,9 +163,9 @@ func Build(root string, dbPath string, opts Options) error {
 		size     int64
 		mtime    int64
 		hash     string
-		chunks   []sqlite.ChunkInput
-		symbols  []sqlite.SymbolInput
-		comments []sqlite.CommentInput
+		chunks   []store.ChunkInput
+		symbols  []store.SymbolInput
+		comments []store.CommentInput
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -189,47 +196,67 @@ func Build(root string, dbPath string, opts Options) error {
 	writerWG.Add(1)
 	go func() {
 		defer writerWG.Done()
+		batchSize := workers * 2
+		if s.Backend() == "bleve" {
+			batchSize = 1
+		}
+		if batchSize < 4 {
+			batchSize = 4
+		}
+		if batchSize > 64 {
+			batchSize = 64
+		}
+		batch := make([]store.FilePlan, 0, batchSize)
+		flush := func() bool {
+			if len(batch) == 0 {
+				return true
+			}
+			stopWrite := func() {}
+			if ex != nil {
+				stopWrite = ex.Timer("write")
+			}
+			if err := s.ReplaceFilesBatch(workspaceID, batch); err != nil {
+				sendErr(err, errCh)
+				cancel()
+				stopWrite()
+				return false
+			}
+			stopWrite()
+			for _, plan := range batch {
+				if plan.Delete {
+					continue
+				}
+				atomic.AddInt64(&filesIndexed, 1)
+				atomic.AddInt64(&chunksWritten, int64(len(plan.Chunks)))
+				atomic.AddInt64(&symbolsWritten, int64(len(plan.Syms)))
+				atomic.AddInt64(&commentsWritten, int64(len(plan.Comms)))
+			}
+			batch = batch[:0]
+			return true
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case pf, ok := <-parsed:
 				if !ok {
+					_ = flush()
 					return
 				}
-				stopWrite := func() {}
-				if ex != nil {
-					stopWrite = ex.Timer("write")
+				batch = append(batch, store.FilePlan{
+					Path:   filepath.ToSlash(pf.rel),
+					Size:   pf.size,
+					MTime:  pf.mtime,
+					Hash:   pf.hash,
+					Chunks: pf.chunks,
+					Syms:   pf.symbols,
+					Comms:  pf.comments,
+				})
+				if len(batch) >= batchSize {
+					if !flush() {
+						return
+					}
 				}
-				if err := s.UpsertFile(workspaceID, pf.rel, pf.size, pf.mtime, pf.hash); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
-				}
-				if err := s.ReplaceChunksBatch(workspaceID, pf.rel, pf.chunks); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
-				}
-				if err := s.ReplaceSymbolsBatch(workspaceID, pf.rel, pf.symbols); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
-				}
-				if err := s.ReplaceCommentsBatch(workspaceID, pf.rel, pf.comments); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
-				}
-				stopWrite()
-				atomic.AddInt64(&filesIndexed, 1)
-				atomic.AddInt64(&chunksWritten, int64(len(pf.chunks)))
-				atomic.AddInt64(&symbolsWritten, int64(len(pf.symbols)))
-				atomic.AddInt64(&commentsWritten, int64(len(pf.comments)))
 			}
 		}
 	}()
@@ -364,7 +391,7 @@ func UpdateFile(root string, dbPath string, rel string, opts Options) error {
 		return fmt.Errorf("dbPath is required")
 	}
 
-	s, err := sqlite.Open(dbPath)
+	s, err := backend.Open(opts.Store, dbPath)
 	if err != nil {
 		return err
 	}
@@ -373,7 +400,7 @@ func UpdateFile(root string, dbPath string, rel string, opts Options) error {
 	return UpdateFileWithStore(s, root, rel, opts, nil, false)
 }
 
-func UpdateFileWithStore(s *sqlite.Store, root string, rel string, opts Options, old *sqlite.File, oldOK bool) error {
+func UpdateFileWithStore(s store.Store, root string, rel string, opts Options, old *store.File, oldOK bool) error {
 	ex := opts.Explain
 
 	root = filepath.Clean(root)
@@ -412,7 +439,7 @@ func UpdateFileWithStore(s *sqlite.Store, root string, rel string, opts Options,
 		return err
 	}
 
-	var meta sqlite.File
+	var meta store.File
 	var ok bool
 	var err error
 	if oldOK && old != nil {
@@ -436,14 +463,14 @@ type UpdatePlan struct {
 	Size   int64
 	MTime  int64
 	Hash   string
-	Chunks []sqlite.ChunkInput
-	Syms   []sqlite.SymbolInput
-	Comms  []sqlite.CommentInput
+	Chunks []store.ChunkInput
+	Syms   []store.SymbolInput
+	Comms  []store.CommentInput
 	Delete bool
 	Skip   bool
 }
 
-func PrepareUpdatePlan(root string, rel string, opts Options, old *sqlite.File, oldOK bool) (UpdatePlan, error) {
+func PrepareUpdatePlan(root string, rel string, opts Options, old *store.File, oldOK bool) (UpdatePlan, error) {
 	root = filepath.Clean(root)
 	if strings.TrimSpace(root) == "" {
 		return UpdatePlan{}, fmt.Errorf("root is required")
@@ -512,21 +539,21 @@ func PrepareUpdatePlan(root string, rel string, opts Options, old *sqlite.File, 
 	}, nil
 }
 
-func ApplyUpdatePlan(s *sqlite.Store, workspaceID string, plan UpdatePlan, ex explain.Explain) error {
+func ApplyUpdatePlan(s store.Store, workspaceID string, plan UpdatePlan, ex explain.Explain) error {
 	return ApplyUpdatePlansBatch(s, workspaceID, []UpdatePlan{plan}, ex)
 }
 
-func ApplyUpdatePlansBatch(s *sqlite.Store, workspaceID string, plans []UpdatePlan, ex explain.Explain) error {
+func ApplyUpdatePlansBatch(s store.Store, workspaceID string, plans []UpdatePlan, ex explain.Explain) error {
 	if len(plans) == 0 {
 		return nil
 	}
 
-	batch := make([]sqlite.FilePlan, 0, len(plans))
+	batch := make([]store.FilePlan, 0, len(plans))
 	for _, plan := range plans {
 		if plan.Skip {
 			continue
 		}
-		batch = append(batch, sqlite.FilePlan{
+		batch = append(batch, store.FilePlan{
 			Path:   plan.Rel,
 			Size:   plan.Size,
 			MTime:  plan.MTime,
@@ -550,20 +577,20 @@ func ApplyUpdatePlansBatch(s *sqlite.Store, workspaceID string, plans []UpdatePl
 	return err
 }
 
-func chunkByLines(text string, chunkLines int, step int) []sqlite.ChunkInput {
+func chunkByLines(text string, chunkLines int, step int) []store.ChunkInput {
 	lines := splitLines(text)
 	if len(lines) == 0 {
 		return nil
 	}
 
-	var out []sqlite.ChunkInput
+	var out []store.ChunkInput
 	for start := 0; start < len(lines); start += step {
 		end := start + chunkLines
 		if end > len(lines) {
 			end = len(lines)
 		}
 		chunkText := strings.Join(lines[start:end], "\n")
-		out = append(out, sqlite.ChunkInput{
+		out = append(out, store.ChunkInput{
 			SL:    start + 1,
 			EL:    end,
 			Kind:  "chunk",

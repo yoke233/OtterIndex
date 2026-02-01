@@ -8,17 +8,6 @@ import (
 	"time"
 )
 
-type FilePlan struct {
-	Path   string
-	Size   int64
-	MTime  int64
-	Hash   string
-	Chunks []ChunkInput
-	Syms   []SymbolInput
-	Comms  []CommentInput
-	Delete bool
-}
-
 func (s *Store) ReplaceFileAll(workspaceID string, path string, size int64, mtime int64, hash string, chunks []ChunkInput, syms []SymbolInput, comms []CommentInput) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("store is not open")

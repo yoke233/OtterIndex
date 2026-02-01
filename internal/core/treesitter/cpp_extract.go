@@ -8,7 +8,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_cpp "github.com/tree-sitter/tree-sitter-cpp/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
 var cppTypeKinds = map[string]struct{}{
@@ -16,7 +16,7 @@ var cppTypeKinds = map[string]struct{}{
 	"struct_specifier": {},
 }
 
-func extractCPP(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractCPP(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -35,8 +35,8 @@ func extractCPP(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comment
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -77,7 +77,7 @@ func extractCPP(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comment
 	return syms, comms, nil
 }
 
-func makeCPPType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInput, bool) {
+func makeCPPType(n *tree_sitter.Node, src []byte, kind string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
 		if id := firstDescendantKind(n, map[string]struct{}{"type_identifier": {}, "identifier": {}}); id != nil {
@@ -85,11 +85,11 @@ func makeCPPType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInp
 		}
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
 	sig := strings.TrimSpace(kind) + " " + name
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      strings.TrimSpace(kind),
 		Name:      name,
 		SL:        sl,
@@ -102,7 +102,7 @@ func makeCPPType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInp
 	}, true
 }
 
-func makeCPPNamespace(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeCPPNamespace(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
 		if id := firstDescendantKind(n, map[string]struct{}{"namespace_identifier": {}, "identifier": {}}); id != nil {
@@ -110,10 +110,10 @@ func makeCPPNamespace(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool
 		}
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "namespace",
 		Name:      name,
 		SL:        sl,
@@ -126,10 +126,10 @@ func makeCPPNamespace(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool
 	}, true
 }
 
-func makeCPPFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeCPPFunction(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	decl := n.ChildByFieldName("declarator")
 	if decl == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 
 	id := firstDescendantKind(decl, map[string]struct{}{
@@ -143,11 +143,11 @@ func makeCPPFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 		id = firstDescendantKind(decl, map[string]struct{}{"identifier": {}})
 	}
 	if id == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	name := strings.TrimSpace(id.Utf8Text(src))
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 
 	container := enclosingTypeName(n, src, cppTypeKinds)
@@ -157,7 +157,7 @@ func makeCPPFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 	if container != "" {
 		sig = container + "::" + name
 	}
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,

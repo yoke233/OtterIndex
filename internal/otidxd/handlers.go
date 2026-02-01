@@ -17,12 +17,14 @@ import (
 	"otterindex/internal/core/query"
 	"otterindex/internal/core/walk"
 	"otterindex/internal/core/watch"
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/backend"
+	"otterindex/internal/index/store"
 	"otterindex/internal/model"
 )
 
 type workspaceInfo struct {
-	root   string
+	root  string
+	store string
 	dbPath string
 }
 
@@ -66,19 +68,26 @@ func (h *Handlers) WorkspaceAdd(p WorkspaceAddParams) (string, error) {
 		return "", fmt.Errorf("root is not a directory")
 	}
 
+	storeName := backend.NormalizeName(p.Store)
+	if storeName != "sqlite" && storeName != "bleve" {
+		return "", fmt.Errorf("invalid store %q (expected: sqlite|bleve)", storeName)
+	}
 	dbPath := strings.TrimSpace(p.DBPath)
 	if dbPath == "" {
-		dbPath = filepath.Join(rootAbs, ".otidx", "index.db")
-	} else if !filepath.IsAbs(dbPath) {
-		if abs, err := filepath.Abs(dbPath); err == nil {
-			dbPath = abs
+		dbPath = backend.DefaultPath(rootAbs, storeName)
+	} else {
+		if !filepath.IsAbs(dbPath) {
+			if abs, err := filepath.Abs(dbPath); err == nil {
+				dbPath = abs
+			}
 		}
+		dbPath = backend.NormalizePath(storeName, dbPath)
 	}
 
 	wsid := uuid.NewString()
 
 	h.mu.Lock()
-	h.workspaces[wsid] = workspaceInfo{root: rootAbs, dbPath: dbPath}
+	h.workspaces[wsid] = workspaceInfo{root: rootAbs, store: storeName, dbPath: dbPath}
 	h.mu.Unlock()
 
 	return wsid, nil
@@ -95,6 +104,7 @@ func (h *Handlers) IndexBuild(p IndexBuildParams) (any, error) {
 	}
 
 	err := indexer.Build(ws.root, ws.dbPath, indexer.Options{
+		Store:        ws.store,
 		WorkspaceID:  p.WorkspaceID,
 		ScanAll:      p.ScanAll,
 		IncludeGlobs: p.IncludeGlobs,
@@ -104,12 +114,12 @@ func (h *Handlers) IndexBuild(p IndexBuildParams) (any, error) {
 		return nil, err
 	}
 
-	s, err := sqlite.Open(ws.dbPath)
+	st, err := backend.Open(ws.store, ws.dbPath)
 	if err != nil {
 		return nil, err
 	}
-	ver, err := s.GetVersion(p.WorkspaceID)
-	_ = s.Close()
+	ver, err := st.GetVersion(p.WorkspaceID)
+	_ = st.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +137,7 @@ func (h *Handlers) Query(p QueryParams) ([]model.ResultItem, error) {
 	}
 
 	opts := query.Options{
+		Store:           ws.store,
 		Unit:            p.Unit,
 		ContextLines:    p.ContextLines,
 		CaseInsensitive: p.CaseInsensitive,
@@ -152,12 +163,12 @@ func (h *Handlers) Query(p QueryParams) ([]model.ResultItem, error) {
 		return query.Query(ws.dbPath, p.WorkspaceID, p.Q, opts)
 	}
 
-	s, err := sqlite.Open(ws.dbPath)
+	st, err := backend.Open(ws.store, ws.dbPath)
 	if err != nil {
 		return nil, err
 	}
-	ver, err := s.GetVersion(p.WorkspaceID)
-	_ = s.Close()
+	ver, err := st.GetVersion(p.WorkspaceID)
+	_ = st.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +257,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 
 	if autoEnabled {
 		var err error
-		tuning, autoParams, err = autoTuneWatch(ws.dbPath, wsid)
+		tuning, autoParams, err = autoTuneWatch(ws.store, ws.dbPath, wsid)
 		if err != nil {
 			return WatchStatusResult{}, err
 		}
@@ -259,6 +270,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	updateFunc := func(paths []string) {
 		for _, rel := range paths {
 			_ = indexer.UpdateFile(rootAbs, ws.dbPath, rel, indexer.Options{
+				Store:        ws.store,
 				WorkspaceID:  wsid,
 				ScanAll:      p.ScanAll,
 				IncludeGlobs: p.IncludeGlobs,
@@ -268,7 +280,8 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}
 
 	if autoParams.QueueMode == "direct" {
-		du = newDirectUpdater(rootAbs, ws.dbPath, indexer.Options{
+		du = newDirectUpdater(rootAbs, ws.store, ws.dbPath, indexer.Options{
+			Store:        ws.store,
 			WorkspaceID:  wsid,
 			ScanAll:      p.ScanAll,
 			IncludeGlobs: p.IncludeGlobs,
@@ -283,7 +296,8 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 			}
 		}
 	} else {
-		uq = newUpdateQueue(rootAbs, ws.dbPath, wsid, indexer.Options{
+		uq = newUpdateQueue(rootAbs, ws.store, ws.dbPath, wsid, indexer.Options{
+			Store:        ws.store,
 			WorkspaceID:  wsid,
 			ScanAll:      p.ScanAll,
 			IncludeGlobs: p.IncludeGlobs,
@@ -297,6 +311,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}
 
 	w, err := watch.NewWatcherWithOptions(ws.root, ws.dbPath, indexer.Options{
+		Store:        ws.store,
 		WorkspaceID:  wsid,
 		ScanAll:      p.ScanAll,
 		IncludeGlobs: p.IncludeGlobs,
@@ -325,6 +340,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 
 	if autoParams.SyncOnStart {
 		if err := syncChangedFiles(ws.root, ws.dbPath, indexer.Options{
+			Store:        ws.store,
 			WorkspaceID:  wsid,
 			ScanAll:      p.ScanAll,
 			IncludeGlobs: p.IncludeGlobs,
@@ -519,7 +535,7 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options, workers 
 		}
 	}
 
-	s, err := sqlite.Open(dbPath)
+	s, err := backend.Open(opts.Store, dbPath)
 	if err != nil {
 		return err
 	}
@@ -588,7 +604,7 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options, workers 
 	writeWg.Add(1)
 	go func() {
 		defer writeWg.Done()
-		writerStore, err := sqlite.Open(dbPath)
+		writerStore, err := backend.Open(opts.Store, dbPath)
 		if err != nil {
 			setErr(err)
 			return
@@ -656,8 +672,11 @@ func isDBRel(rel string, dbRel string) bool {
 	if dbRel == "" {
 		return false
 	}
+	if rel == dbRel || strings.HasPrefix(rel, dbRel+"/") {
+		return true
+	}
 	switch rel {
-	case dbRel, dbRel + "-wal", dbRel + "-shm", dbRel + "-journal":
+	case dbRel + "-wal", dbRel + "-shm", dbRel + "-journal":
 		return true
 	default:
 		return false
@@ -743,7 +762,7 @@ func applyAutoParams(p WatchStartParams, auto watchAutoParams) watchAutoParams {
 	return out
 }
 
-func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchAutoParams, error) {
+func autoTuneWatch(storeName string, dbPath string, workspaceID string) (updateQueueTuning, watchAutoParams, error) {
 	tuning := defaultQueueTuning()
 	auto := watchAutoParams{
 		DebounceMS:       0,
@@ -755,7 +774,7 @@ func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchA
 		AutoTune:         true,
 	}
 
-	s, err := sqlite.Open(dbPath)
+	s, err := backend.Open(storeName, dbPath)
 	if err != nil {
 		return tuning, auto, err
 	}
@@ -818,6 +837,7 @@ func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchA
 
 type updateQueue struct {
 	rootAbs     string
+	store       string
 	dbPath      string
 	opts        indexer.Options
 	workspaceID string
@@ -850,7 +870,7 @@ type updateQueueTuning struct {
 	BatchXL       int
 }
 
-func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts indexer.Options, tuning updateQueueTuning, mode string) *updateQueue {
+func newUpdateQueue(rootAbs string, storeName string, dbPath string, workspaceID string, opts indexer.Options, tuning updateQueueTuning, mode string) *updateQueue {
 	if tuning.IntervalSmall <= 0 {
 		tuning = defaultQueueTuning()
 	}
@@ -865,6 +885,7 @@ func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts inde
 	}
 	q := &updateQueue{
 		rootAbs:     rootAbs,
+		store:       storeName,
 		dbPath:      dbPath,
 		opts:        opts,
 		workspaceID: workspaceID,
@@ -917,7 +938,7 @@ func (q *updateQueue) Close() {
 func (q *updateQueue) run() {
 	defer q.wg.Done()
 
-	store, err := sqlite.Open(q.dbPath)
+	store, err := backend.Open(q.store, q.dbPath)
 	if err != nil {
 		return
 	}
@@ -1159,12 +1180,12 @@ func (q *updateQueue) adjustMode(pending int, avgSize int64) {
 type directUpdater struct {
 	rootAbs string
 	opts    indexer.Options
-	store   *sqlite.Store
+	store   store.Store
 	mu      sync.Mutex
 }
 
-func newDirectUpdater(rootAbs string, dbPath string, opts indexer.Options) *directUpdater {
-	s, err := sqlite.Open(dbPath)
+func newDirectUpdater(rootAbs string, storeName string, dbPath string, opts indexer.Options) *directUpdater {
+	s, err := backend.Open(storeName, dbPath)
 	if err != nil {
 		return nil
 	}

@@ -2,6 +2,7 @@ param(
     [string]$Listen = "127.0.0.1:7337",
     [string]$Root = ".",
     [string]$Query = "hello",
+    [string]$Store = "sqlite",
     [switch]$Show
 )
 
@@ -70,7 +71,7 @@ try {
     $id++
 
     Write-Host "workspace.add ->"
-    $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "workspace.add" -Params @{ root = $rootAbs }
+    $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "workspace.add" -Params @{ root = $rootAbs; store = $Store }
     Write-Host ($resp | ConvertTo-Json -Depth 6)
     $wsid = $resp.result
     $id++

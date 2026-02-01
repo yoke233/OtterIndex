@@ -2,7 +2,10 @@ param(
     [string]$Root = ".",
     [string]$Listen = "",
     [string]$Query = "TODO",
+    [string]$Store = "sqlite",
     [switch]$Show,
+    [int]$StartTimeoutSec = 15,
+    [switch]$NoSyncOnStart,
     [int]$SampleMs = 200,
     [int]$DebounceMs = 0,
     [switch]$AdaptiveDebounce,
@@ -61,8 +64,8 @@ function Send-Rpc {
 }
 
 function Wait-Server {
-    param([string]$Listen)
-    $deadline = (Get-Date).AddSeconds(5)
+    param([string]$Listen, [int]$TimeoutSec = 5)
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         try {
             $client = [System.Net.Sockets.TcpClient]::new()
@@ -161,6 +164,7 @@ $listenAddr = "$listenHost`:$listenPort"
 
 Write-Host "Root: $rootAbs"
 Write-Host "Listen: $listenAddr"
+Write-Host "Store: $Store"
 
 $fileStats = Get-ChildItem -LiteralPath $rootAbs -Recurse -File -Force |
     Measure-Object -Property Length -Sum
@@ -175,7 +179,7 @@ Write-Host "Building otidxd..."
 & go build -o $exePath ./cmd/otidxd
 
 $serverProc = Start-Process -FilePath $exePath -ArgumentList @("-listen", $listenAddr) -PassThru -WindowStyle Hidden
-if (-not (Wait-Server -Listen $listenAddr)) {
+if (-not (Wait-Server -Listen $listenAddr -TimeoutSec $StartTimeoutSec)) {
     try { $serverProc.Kill() } catch {}
     throw "failed to start otidxd"
 }
@@ -196,7 +200,7 @@ try {
     }
     $id++
 
-    $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "workspace.add" -Params @{ root = $rootAbs }
+    $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "workspace.add" -Params @{ root = $rootAbs; store = $Store }
     $wsid = $resp.result
     $id++
 
@@ -217,10 +221,12 @@ try {
     }
     $id++
 
-    $sync = Measure-Phase -Name "watch.start(sync_on_start)" -TargetPid $serverProc.Id -SampleMs $SampleMs -Action {
+    $syncLabel = "watch.start(sync_on_start)"
+    if ($NoSyncOnStart) { $syncLabel = "watch.start(sync_on_start=false)" }
+    $sync = Measure-Phase -Name $syncLabel -TargetPid $serverProc.Id -SampleMs $SampleMs -Action {
         $params = @{
             workspace_id  = $wsid
-            sync_on_start = $true
+            sync_on_start = (-not $NoSyncOnStart)
         }
         if ($DebounceMs -gt 0) { $params.debounce_ms = $DebounceMs }
         if ($AdaptiveDebounce) { $params.adaptive_debounce = $true }

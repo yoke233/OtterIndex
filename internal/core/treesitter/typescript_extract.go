@@ -9,22 +9,22 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_ts "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
 var tsTypeKinds = map[string]struct{}{
 	"class_declaration": {},
 }
 
-func extractTypeScript(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractTypeScript(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	return extractTypeScriptWithLang(path, src, tree_sitter_ts.LanguageTypescript(), "typescript")
 }
 
-func extractTSX(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractTSX(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	return extractTypeScriptWithLang(path, src, tree_sitter_ts.LanguageTSX(), "tsx")
 }
 
-func extractTypeScriptWithLang(path string, src []byte, langPtr unsafe.Pointer, langName string) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractTypeScriptWithLang(path string, src []byte, langPtr unsafe.Pointer, langName string) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -43,8 +43,8 @@ func extractTypeScriptWithLang(path string, src []byte, langPtr unsafe.Pointer, 
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -93,13 +93,13 @@ func extractTypeScriptWithLang(path string, src []byte, langPtr unsafe.Pointer, 
 	return syms, comms, nil
 }
 
-func makeTSClass(n *tree_sitter.Node, src []byte, lang string) (sqlite.SymbolInput, bool) {
+func makeTSClass(n *tree_sitter.Node, src []byte, lang string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "class",
 		Name:      name,
 		SL:        sl,
@@ -112,13 +112,13 @@ func makeTSClass(n *tree_sitter.Node, src []byte, lang string) (sqlite.SymbolInp
 	}, true
 }
 
-func makeTSNamedDecl(n *tree_sitter.Node, src []byte, kind string, sigPrefix string, lang string) (sqlite.SymbolInput, bool) {
+func makeTSNamedDecl(n *tree_sitter.Node, src []byte, kind string, sigPrefix string, lang string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      kind,
 		Name:      name,
 		SL:        sl,
@@ -131,13 +131,13 @@ func makeTSNamedDecl(n *tree_sitter.Node, src []byte, kind string, sigPrefix str
 	}, true
 }
 
-func makeTSFunction(n *tree_sitter.Node, src []byte, lang string) (sqlite.SymbolInput, bool) {
+func makeTSFunction(n *tree_sitter.Node, src []byte, lang string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,
@@ -150,7 +150,7 @@ func makeTSFunction(n *tree_sitter.Node, src []byte, lang string) (sqlite.Symbol
 	}, true
 }
 
-func makeTSMethod(n *tree_sitter.Node, src []byte, lang string) (sqlite.SymbolInput, bool) {
+func makeTSMethod(n *tree_sitter.Node, src []byte, lang string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
 		if id := firstDescendantKind(n, map[string]struct{}{"property_identifier": {}, "identifier": {}}); id != nil {
@@ -158,7 +158,7 @@ func makeTSMethod(n *tree_sitter.Node, src []byte, lang string) (sqlite.SymbolIn
 		}
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	container := enclosingTypeName(n, src, tsTypeKinds)
 	sl, sc, el, ec := nodeRange1Based(n)
@@ -167,7 +167,7 @@ func makeTSMethod(n *tree_sitter.Node, src []byte, lang string) (sqlite.SymbolIn
 	if container != "" {
 		sig = container + "." + name
 	}
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "method",
 		Name:      name,
 		SL:        sl,

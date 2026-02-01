@@ -268,8 +268,11 @@ func (w *Watcher) isDBRel(rel string) bool {
 	if w.dbRel == "" {
 		return false
 	}
+	if rel == w.dbRel || strings.HasPrefix(rel, w.dbRel+"/") {
+		return true
+	}
 	switch rel {
-	case w.dbRel, w.dbRel + "-wal", w.dbRel + "-shm", w.dbRel + "-journal":
+	case w.dbRel + "-wal", w.dbRel + "-shm", w.dbRel + "-journal":
 		return true
 	default:
 		return false

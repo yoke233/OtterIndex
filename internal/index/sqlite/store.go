@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"otterindex/internal/index/store"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -20,31 +22,6 @@ type Store struct {
 	db     *sql.DB
 	hasFTS bool
 	ftsErr error
-}
-
-type File struct {
-	WorkspaceID string
-	Path        string
-	Size        int64
-	MTime       int64
-	Hash        string
-}
-
-type Chunk struct {
-	Path        string
-	SL          int
-	EL          int
-	Kind        string
-	Title       string
-	Text        string
-	Snippet     string
-	WorkspaceID string
-}
-
-type Workspace struct {
-	ID        string
-	Root      string
-	CreatedAt int64
 }
 
 func Open(dbPath string) (*Store, error) {
@@ -77,6 +54,8 @@ func (s *Store) Close() error {
 	}
 	return s.db.Close()
 }
+
+func (s *Store) Backend() string { return "sqlite" }
 
 func (s *Store) HasFTS() bool { return s != nil && s.hasFTS }
 
@@ -314,17 +293,17 @@ func (s *Store) GetWorkspace(workspaceID string) (Workspace, error) {
 	return ws, nil
 }
 
-func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, caseInsensitive bool) ([]Chunk, error) {
+func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, caseInsensitive bool) (store.SearchResult, error) {
 	if s == nil || s.db == nil {
-		return nil, fmt.Errorf("store is not open")
+		return store.SearchResult{}, fmt.Errorf("store is not open")
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	keyword = strings.TrimSpace(keyword)
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspaceID is required")
+		return store.SearchResult{}, fmt.Errorf("workspaceID is required")
 	}
 	if keyword == "" {
-		return nil, fmt.Errorf("keyword is required")
+		return store.SearchResult{}, fmt.Errorf("keyword is required")
 	}
 	if limit <= 0 {
 		limit = 50
@@ -361,7 +340,7 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 			)
 		}
 		if err != nil {
-			return nil, err
+			return store.SearchResult{}, err
 		}
 		defer rows.Close()
 
@@ -371,19 +350,23 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 			c.WorkspaceID = workspaceID
 			if includeSnippet {
 				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text, &c.Snippet); err != nil {
-					return nil, err
+					return store.SearchResult{}, err
 				}
 			} else {
 				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
-					return nil, err
+					return store.SearchResult{}, err
 				}
 			}
 			out = append(out, c)
 		}
 		if err := rows.Err(); err != nil {
-			return nil, err
+			return store.SearchResult{}, err
 		}
-		return out, nil
+		return store.SearchResult{
+			Chunks:               out,
+			MatchCaseInsensitive: true,
+			Backend:              "sqlite",
+		}, nil
 	} else {
 		query := `SELECT path, sl, el, kind, title, text
 		          FROM chunks
@@ -400,7 +383,7 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 		rows, err = s.db.Query(query, workspaceID, keyword, limit)
 	}
 	if err != nil {
-		return nil, err
+		return store.SearchResult{}, err
 	}
 	defer rows.Close()
 
@@ -409,14 +392,18 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 		var c Chunk
 		c.WorkspaceID = workspaceID
 		if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
-			return nil, err
+			return store.SearchResult{}, err
 		}
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return store.SearchResult{}, err
 	}
-	return out, nil
+	return store.SearchResult{
+		Chunks:               out,
+		MatchCaseInsensitive: caseInsensitive,
+		Backend:              "sqlite",
+	}, nil
 }
 
 func (s *Store) ReplaceChunks(workspaceID string, path string, chunks []Chunk) error {

@@ -23,6 +23,7 @@ type ErrorObject struct {
 
 type WorkspaceAddParams struct {
 	Root   string `json:"root"`
+	Store  string `json:"store,omitempty"`
 	DBPath string `json:"db_path,omitempty"`
 }
 

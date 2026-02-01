@@ -9,28 +9,6 @@ import (
 	"otterindex/internal/model"
 )
 
-type SymbolInput struct {
-	Kind      string
-	Name      string
-	SL        int
-	SC        int
-	EL        int
-	EC        int
-	Container string
-	Lang      string
-	Signature string
-}
-
-type CommentInput struct {
-	Kind string
-	Text string
-	SL   int
-	SC   int
-	EL   int
-	EC   int
-	Lang string
-}
-
 func (s *Store) ReplaceSymbolsBatch(workspaceID string, path string, syms []SymbolInput) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("store is not open")

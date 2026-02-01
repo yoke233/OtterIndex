@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"otterindex/internal/core/query"
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/backend"
 )
 
 func newQCommand() *cobra.Command {
@@ -44,11 +44,11 @@ func newQCommand() *cobra.Command {
 			wantWorkspaceRoot := opts.Show || defaultShow
 			workspaceRoot := ""
 			if wantWorkspaceRoot {
-				if s, err := sqlite.Open(opts.DBPath); err == nil {
-					if ws, err := s.GetWorkspace(workspaceID); err == nil {
+				if st, err := backend.Open(opts.Store, opts.DBPath); err == nil {
+					if ws, err := st.GetWorkspace(workspaceID); err == nil {
 						workspaceRoot = ws.Root
 					}
-					_ = s.Close()
+					_ = st.Close()
 				}
 			}
 
@@ -58,6 +58,7 @@ func newQCommand() *cobra.Command {
 			}
 
 			qopts := query.Options{
+				Store:           opts.Store,
 				Unit:            opts.Unit,
 				ContextLines:    opts.ContextLines,
 				CaseInsensitive: opts.CaseInsensitive,
@@ -72,12 +73,12 @@ func newQCommand() *cobra.Command {
 			if opts.Cache {
 				cache := query.NewQueryCache(opts.CacheSize)
 
-				s, err := sqlite.Open(opts.DBPath)
+				st, err := backend.Open(opts.Store, opts.DBPath)
 				if err != nil {
 					return err
 				}
-				ver, err := s.GetVersion(workspaceID)
-				_ = s.Close()
+				ver, err := st.GetVersion(workspaceID)
+				_ = st.Close()
 				if err != nil {
 					return err
 				}

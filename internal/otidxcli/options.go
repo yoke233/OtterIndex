@@ -8,10 +8,13 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"otterindex/internal/index/backend"
 )
 
 type Options struct {
 	DBPath          string
+	Store           string
 	ScanAll         bool
 	IncludeGlobs    []string
 	ExcludeGlobs    []string
@@ -39,7 +42,7 @@ type Options struct {
 
 func (o *Options) Prepare() error {
 	o.normalize()
-	o.DBPath = normalizeDBPath(o.DBPath)
+	o.DBPath = normalizeDBPath(o.Store, o.DBPath)
 
 	if strings.TrimSpace(o.DBPath) == "" {
 		return fmt.Errorf("database path is required")
@@ -55,6 +58,13 @@ func (o *Options) Prepare() error {
 	}
 	if o.CacheSize <= 0 {
 		return fmt.Errorf("cache size must be >= 1")
+	}
+
+	switch backend.NormalizeName(o.Store) {
+	case "sqlite", "bleve":
+		o.Store = backend.NormalizeName(o.Store)
+	default:
+		return fmt.Errorf("invalid --store %q (expected: sqlite|bleve)", o.Store)
 	}
 
 	switch o.Unit {
@@ -82,6 +92,11 @@ func (o *Options) Prepare() error {
 }
 
 func (o *Options) normalize() {
+	o.Store = strings.TrimSpace(o.Store)
+	if o.Store == "" {
+		o.Store = "sqlite"
+	}
+
 	o.Theme = "default"
 	if o.colorblind {
 		o.Theme = "colorblind"
@@ -130,6 +145,7 @@ func isTestMode(cmd *cobra.Command) bool {
 
 func bindFlags(cmd *cobra.Command, opts *Options) {
 	cmd.PersistentFlags().StringVarP(&opts.DBPath, "database", "d", opts.DBPath, "database to use or /path/to/file.db")
+	cmd.PersistentFlags().StringVar(&opts.Store, "store", opts.Store, "store backend (sqlite|bleve)")
 	cmd.PersistentFlags().BoolVarP(&opts.ScanAll, "all", "A", opts.ScanAll, "scan unwanted and difficult (ALL) files")
 	cmd.PersistentFlags().StringSliceVarP(&opts.ExcludeGlobs, "exclude", "x", nil, "exclude these files (comma separated list: -x *.js,*.sql)")
 	cmd.PersistentFlags().StringSliceVarP(&opts.IncludeGlobs, "glob", "g", nil, "only search these files (can repeat)")
@@ -180,6 +196,7 @@ func ExecuteForTest(cmd *cobra.Command) (string, Options, error) {
 func newDefaultOptions() *Options {
 	return &Options{
 		DBPath:       ".otidx/index.db",
+		Store:        "sqlite",
 		ContextLines: 1,
 		Limit:        20,
 		Offset:       0,
@@ -203,7 +220,7 @@ func printTodo(cmd *cobra.Command) error {
 	return nil
 }
 
-func normalizeDBPath(db string) string {
+func normalizeDBPath(storeName string, db string) string {
 	db = strings.TrimSpace(db)
 	if db == "" {
 		return ""
@@ -212,11 +229,15 @@ func normalizeDBPath(db string) string {
 	// Treat values without separators as a "dbname" under .otidx.
 	// e.g. `-d foo` => `.otidx/foo.db`
 	if !strings.ContainsAny(db, "/\\") && !strings.Contains(db, ":") {
-		if !strings.HasSuffix(strings.ToLower(db), ".db") {
-			db += ".db"
+		if !strings.Contains(db, ".") {
+			if backend.NormalizeName(storeName) == "bleve" {
+				db += ".bleve"
+			} else {
+				db += ".db"
+			}
 		}
-		return filepath.Join(".otidx", db)
+		return backend.NormalizePath(storeName, filepath.Join(".otidx", db))
 	}
 
-	return filepath.Clean(db)
+	return backend.NormalizePath(storeName, filepath.Clean(db))
 }

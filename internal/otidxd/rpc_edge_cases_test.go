@@ -65,6 +65,10 @@ func TestHandlers_WorkspaceAdd_Errors(t *testing.T) {
 	if _, err := h.WorkspaceAdd(WorkspaceAddParams{Root: filepath.Join(root, "missing")}); err == nil {
 		t.Fatalf("expected error for missing root")
 	}
+
+	if _, err := h.WorkspaceAdd(WorkspaceAddParams{Root: root, Store: "bad"}); err == nil {
+		t.Fatalf("expected error for invalid store")
+	}
 }
 
 func TestHandlers_WorkspaceAdd_RelativeDBPath(t *testing.T) {

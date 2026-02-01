@@ -8,7 +8,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_php "github.com/tree-sitter/tree-sitter-php/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
 var phpTypeKinds = map[string]struct{}{
@@ -18,7 +18,7 @@ var phpTypeKinds = map[string]struct{}{
 	"enum_declaration":      {},
 }
 
-func extractPHP(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractPHP(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -37,8 +37,8 @@ func extractPHP(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comment
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -91,13 +91,13 @@ func extractPHP(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comment
 	return syms, comms, nil
 }
 
-func makePHPNamespace(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makePHPNamespace(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "namespace",
 		Name:      name,
 		SL:        sl,
@@ -110,14 +110,14 @@ func makePHPNamespace(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool
 	}, true
 }
 
-func makePHPType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInput, bool) {
+func makePHPType(n *tree_sitter.Node, src []byte, kind string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
 	sig := strings.TrimSpace(kind) + " " + name
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      strings.TrimSpace(kind),
 		Name:      name,
 		SL:        sl,
@@ -130,13 +130,13 @@ func makePHPType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInp
 	}, true
 }
 
-func makePHPFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makePHPFunction(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,
@@ -149,10 +149,10 @@ func makePHPFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 	}, true
 }
 
-func makePHPMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makePHPMethod(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	container := enclosingTypeName(n, src, phpTypeKinds)
 	sl, sc, el, ec := nodeRange1Based(n)
@@ -161,7 +161,7 @@ func makePHPMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 	if container != "" {
 		sig = container + "." + name
 	}
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "method",
 		Name:      name,
 		SL:        sl,
