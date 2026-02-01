@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"otterindex/internal/index/store"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -20,31 +22,6 @@ type Store struct {
 	db     *sql.DB
 	hasFTS bool
 	ftsErr error
-}
-
-type File struct {
-	WorkspaceID string
-	Path        string
-	Size        int64
-	MTime       int64
-	Hash        string
-}
-
-type Chunk struct {
-	Path        string
-	SL          int
-	EL          int
-	Kind        string
-	Title       string
-	Text        string
-	Snippet     string
-	WorkspaceID string
-}
-
-type Workspace struct {
-	ID        string
-	Root      string
-	CreatedAt int64
 }
 
 func Open(dbPath string) (*Store, error) {
@@ -77,6 +54,8 @@ func (s *Store) Close() error {
 	}
 	return s.db.Close()
 }
+
+func (s *Store) Backend() string { return "sqlite" }
 
 func (s *Store) HasFTS() bool { return s != nil && s.hasFTS }
 
@@ -217,6 +196,64 @@ func (s *Store) GetFileMeta(workspaceID string, path string) (File, bool, error)
 	return f, true, nil
 }
 
+func (s *Store) GetFilesStats(workspaceID string) (int, int64, error) {
+	if s == nil || s.db == nil {
+		return 0, 0, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return 0, 0, fmt.Errorf("workspaceID is required")
+	}
+
+	var count int
+	var total sql.NullInt64
+	if err := s.db.QueryRow(
+		`SELECT COUNT(1), COALESCE(SUM(size), 0) FROM files WHERE workspace_id = ?`,
+		workspaceID,
+	).Scan(&count, &total); err != nil {
+		return 0, 0, err
+	}
+	if !total.Valid {
+		return count, 0, nil
+	}
+	return count, total.Int64, nil
+}
+
+func (s *Store) ListFilesMeta(workspaceID string) (map[string]File, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspaceID is required")
+	}
+
+	rows, err := s.db.Query(
+		`SELECT path, size, mtime, hash
+		 FROM files
+		 WHERE workspace_id = ?`,
+		workspaceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]File{}
+	for rows.Next() {
+		var f File
+		f.WorkspaceID = workspaceID
+		if err := rows.Scan(&f.Path, &f.Size, &f.MTime, &f.Hash); err != nil {
+			return nil, err
+		}
+		out[f.Path] = f
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *Store) DeleteFile(workspaceID string, path string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("store is not open")
@@ -256,17 +293,17 @@ func (s *Store) GetWorkspace(workspaceID string) (Workspace, error) {
 	return ws, nil
 }
 
-func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, caseInsensitive bool) ([]Chunk, error) {
+func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, caseInsensitive bool) (store.SearchResult, error) {
 	if s == nil || s.db == nil {
-		return nil, fmt.Errorf("store is not open")
+		return store.SearchResult{}, fmt.Errorf("store is not open")
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	keyword = strings.TrimSpace(keyword)
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspaceID is required")
+		return store.SearchResult{}, fmt.Errorf("workspaceID is required")
 	}
 	if keyword == "" {
-		return nil, fmt.Errorf("keyword is required")
+		return store.SearchResult{}, fmt.Errorf("keyword is required")
 	}
 	if limit <= 0 {
 		limit = 50
@@ -275,21 +312,17 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 	var rows *sql.Rows
 	var err error
 	if s.hasFTS {
-		includeSnippet := true
 		rows, err = s.db.Query(
-			`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text,
-			        snippet(chunks_fts, 0, '<<', '>>', '…', 16) AS snip
+			`SELECT path, sl, el, kind, title, text
 			 FROM chunks_fts
-			 JOIN chunks c ON c.id = chunks_fts.rowid
-			 WHERE chunks_fts MATCH ? AND c.workspace_id = ?
-			 ORDER BY c.path, c.sl, c.el
+			 WHERE chunks_fts MATCH ? AND workspace_id = ?
+			 ORDER BY path, sl, el
 			 LIMIT ?`,
 			keyword,
 			workspaceID,
 			limit,
 		)
 		if err != nil {
-			includeSnippet = false
 			rows, err = s.db.Query(
 				`SELECT c.path, c.sl, c.el, c.kind, c.title, c.text
 				 FROM chunks_fts
@@ -303,7 +336,7 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 			)
 		}
 		if err != nil {
-			return nil, err
+			return store.SearchResult{}, err
 		}
 		defer rows.Close()
 
@@ -311,21 +344,19 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 		for rows.Next() {
 			var c Chunk
 			c.WorkspaceID = workspaceID
-			if includeSnippet {
-				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text, &c.Snippet); err != nil {
-					return nil, err
-				}
-			} else {
-				if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
-					return nil, err
-				}
+			if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
+				return store.SearchResult{}, err
 			}
 			out = append(out, c)
 		}
 		if err := rows.Err(); err != nil {
-			return nil, err
+			return store.SearchResult{}, err
 		}
-		return out, nil
+		return store.SearchResult{
+			Chunks:               out,
+			MatchCaseInsensitive: true,
+			Backend:              "sqlite",
+		}, nil
 	} else {
 		query := `SELECT path, sl, el, kind, title, text
 		          FROM chunks
@@ -342,7 +373,7 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 		rows, err = s.db.Query(query, workspaceID, keyword, limit)
 	}
 	if err != nil {
-		return nil, err
+		return store.SearchResult{}, err
 	}
 	defer rows.Close()
 
@@ -351,14 +382,18 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 		var c Chunk
 		c.WorkspaceID = workspaceID
 		if err := rows.Scan(&c.Path, &c.SL, &c.EL, &c.Kind, &c.Title, &c.Text); err != nil {
-			return nil, err
+			return store.SearchResult{}, err
 		}
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return store.SearchResult{}, err
 	}
-	return out, nil
+	return store.SearchResult{
+		Chunks:               out,
+		MatchCaseInsensitive: caseInsensitive,
+		Backend:              "sqlite",
+	}, nil
 }
 
 func (s *Store) ReplaceChunks(workspaceID string, path string, chunks []Chunk) error {
@@ -435,38 +470,87 @@ func (s *Store) init() error {
 
 func (s *Store) tryCreateFTS() error {
 	// FTS is optional: if the driver/build does not support fts5 we fall back later.
+	ok, err := hasFTSColumns(s.db)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+
 	stmts := []string{
+		`DROP TRIGGER IF EXISTS chunks_ai`,
+		`DROP TRIGGER IF EXISTS chunks_ad`,
+		`DROP TRIGGER IF EXISTS chunks_au`,
+		`DROP TABLE IF EXISTS chunks_fts`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
 		 USING fts5(
 		   text,
 		   title,
 		   path UNINDEXED,
 		   workspace_id UNINDEXED,
+		   kind UNINDEXED,
+		   sl UNINDEXED,
+		   el UNINDEXED,
 		   content='chunks',
 		   content_rowid='id'
 		 )`,
 		`CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
-		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id)
-		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id);
+		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id, new.kind, new.sl, new.el);
 		 END`,
 		`CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
-		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id)
-		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id);
+		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id, old.kind, old.sl, old.el);
 		 END`,
 		`CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
-		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id)
-		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id);
-		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id)
-		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id);
+		   INSERT INTO chunks_fts(chunks_fts, rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES('delete', old.id, old.text, old.title, old.path, old.workspace_id, old.kind, old.sl, old.el);
+		   INSERT INTO chunks_fts(rowid, text, title, path, workspace_id, kind, sl, el)
+		   VALUES (new.id, new.text, new.title, new.path, new.workspace_id, new.kind, new.sl, new.el);
 		 END`,
 	}
-
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return err
 		}
 	}
+	_, _ = s.db.Exec(`INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')`)
 	return nil
+}
+
+func hasFTSColumns(db *sql.DB) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("db is nil")
+	}
+	rows, err := db.Query(`PRAGMA table_info(chunks_fts)`)
+	if err != nil {
+		return false, nil
+	}
+	defer rows.Close()
+
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dflt any
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	want := []string{"text", "title", "path", "workspace_id", "kind", "sl", "el"}
+	for _, name := range want {
+		if !cols[name] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (s *Store) ensureWorkspace(id string, root string) error {

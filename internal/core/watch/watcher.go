@@ -24,13 +24,26 @@ type Watcher struct {
 	indexerOpts indexer.Options
 	filter      *walk.Filter
 	debouncer   *Debouncer
+	debounce    time.Duration
 
 	watcher   *fsnotify.Watcher
 	closeOnce sync.Once
 	closed    chan struct{}
 }
 
+type Options struct {
+	Debounce         time.Duration
+	AdaptiveDebounce bool
+	DebounceMin      time.Duration
+	DebounceMax      time.Duration
+	UpdateFunc       func(paths []string)
+}
+
 func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, error) {
+	return NewWatcherWithOptions(root, dbPath, opts, Options{})
+}
+
+func NewWatcherWithOptions(root string, dbPath string, opts indexer.Options, wopts Options) (*Watcher, error) {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -70,21 +83,56 @@ func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, err
 		return nil, err
 	}
 
+	debounce := wopts.Debounce
+	if debounce <= 0 {
+		debounce = 200 * time.Millisecond
+	}
+	minDelay := wopts.DebounceMin
+	if minDelay <= 0 {
+		minDelay = 50 * time.Millisecond
+	}
+	maxDelay := wopts.DebounceMax
+	if maxDelay <= 0 {
+		maxDelay = 500 * time.Millisecond
+	}
+	if maxDelay < minDelay {
+		maxDelay = minDelay
+	}
+
 	w := &Watcher{
 		rootAbs:     rootAbs,
 		dbPath:      dbPath,
 		dbRel:       dbRel,
 		indexerOpts: opts,
 		filter:      filter,
-		debouncer:   NewDebouncer(200 * time.Millisecond),
+		debouncer:   NewDebouncer(debounce),
+		debounce:    debounce,
 		watcher:     fsw,
 		closed:      make(chan struct{}),
 	}
-	w.debouncer.OnFire(func(paths []string) {
-		for _, rel := range paths {
-			_ = indexer.UpdateFile(w.rootAbs, w.dbPath, rel, w.indexerOpts)
-		}
-	})
+	if wopts.AdaptiveDebounce {
+		w.debouncer.SetDelayFunc(func(count int) time.Duration {
+			switch {
+			case count <= 10:
+				return minDelay
+			case count <= 100:
+				return minDelay * 2
+			case count <= 500:
+				return minDelay * 4
+			default:
+				return maxDelay
+			}
+		})
+	}
+	if wopts.UpdateFunc != nil {
+		w.debouncer.OnFire(wopts.UpdateFunc)
+	} else {
+		w.debouncer.OnFire(func(paths []string) {
+			for _, rel := range paths {
+				_ = indexer.UpdateFile(w.rootAbs, w.dbPath, rel, w.indexerOpts)
+			}
+		})
+	}
 
 	if err := w.addExistingDirs(); err != nil {
 		_ = fsw.Close()
@@ -92,6 +140,13 @@ func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, err
 	}
 
 	return w, nil
+}
+
+func (w *Watcher) Debounce() time.Duration {
+	if w == nil {
+		return 0
+	}
+	return w.debounce
 }
 
 func (w *Watcher) Close() error {
@@ -213,8 +268,11 @@ func (w *Watcher) isDBRel(rel string) bool {
 	if w.dbRel == "" {
 		return false
 	}
+	if rel == w.dbRel || strings.HasPrefix(rel, w.dbRel+"/") {
+		return true
+	}
 	switch rel {
-	case w.dbRel, w.dbRel + "-wal", w.dbRel + "-shm", w.dbRel + "-journal":
+	case w.dbRel + "-wal", w.dbRel + "-shm", w.dbRel + "-journal":
 		return true
 	default:
 		return false
@@ -242,4 +300,3 @@ func (w *Watcher) addDirRecursive(absDir string) error {
 		return w.watcher.Add(p)
 	})
 }
-

@@ -13,11 +13,13 @@ import (
 	"otterindex/internal/core/explain"
 	"otterindex/internal/core/search"
 	"otterindex/internal/core/unit"
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/backend"
+	"otterindex/internal/index/store"
 	"otterindex/internal/model"
 )
 
 type Options struct {
+	Store           string
 	Unit            string
 	ContextLines    int
 	CaseInsensitive bool
@@ -71,6 +73,7 @@ func queryWithInfo(dbPath string, workspaceID string, q string, opts Options, pr
 
 	if ex != nil {
 		ex.KV("phase", "query")
+		ex.KV("store", opts.Store)
 		ex.KV("db_path", dbPath)
 		ex.KV("workspace_id", workspaceID)
 		ex.KV("q", q)
@@ -85,7 +88,7 @@ func queryWithInfo(dbPath string, workspaceID string, q string, opts Options, pr
 		}
 	}
 
-	s, err := sqlite.Open(dbPath)
+	s, err := backend.Open(opts.Store, dbPath)
 	if err != nil {
 		return nil, queryInfo{}, err
 	}
@@ -128,24 +131,11 @@ func queryWithInfo(dbPath string, workspaceID string, q string, opts Options, pr
 	}
 	info.fetchN = fetchN
 
-	matchCaseInsensitive := opts.CaseInsensitive
-	if s.HasFTS() {
-		// FTS5 is case-insensitive by default; keep match extraction aligned.
-		matchCaseInsensitive = true
-	}
-	if ex != nil {
-		ex.KV("match_case_insensitive", matchCaseInsensitive)
-	}
-
-	sqlKeyword := q
-	if s.HasFTS() {
-		sqlKeyword = ftsPrefixQuery(q)
-	}
-
 	var items []model.ResultItem
 	rowsReturned := 0
 	var candidates []candidateRow
 	attempts := 0
+	matchCaseInsensitive := opts.CaseInsensitive
 	for attempt := 0; attempt < 3; attempt++ {
 		attempts++
 
@@ -153,27 +143,31 @@ func queryWithInfo(dbPath string, workspaceID string, q string, opts Options, pr
 		if ex != nil {
 			stopSQL = ex.Timer("sql")
 		}
-		chunks, err := s.SearchChunks(workspaceID, sqlKeyword, fetchN, opts.CaseInsensitive)
+		res, err := s.SearchChunks(workspaceID, q, fetchN, opts.CaseInsensitive)
 		stopSQL()
 		if err != nil {
 			return nil, queryInfo{}, err
 		}
-		rowsReturned = len(chunks)
-		candidates = candidatesFromChunks(chunks)
+		rowsReturned = len(res.Chunks)
+		matchCaseInsensitive = res.MatchCaseInsensitive
+		if ex != nil && attempt == 0 {
+			ex.KV("match_case_insensitive", matchCaseInsensitive)
+		}
+		candidates = candidatesFromChunks(res.Chunks)
 
 		stopMatch := func() {}
 		if ex != nil {
 			stopMatch = ex.Timer("match")
 		}
-		items, err = buildItemsFromCandidates(candidates, q, opts, matchCaseInsensitive, pathTopN, ex)
+		items, err = buildItemsFromCandidates(candidates, q, opts, matchCaseInsensitive, pathTopN, wantN, ex)
 		stopMatch()
 		if err != nil {
 			return nil, queryInfo{}, err
 		}
 
 		// If we have enough (after dedupe/filters) or the DB returned fewer than requested, stop.
-		if len(items) >= wantN || len(chunks) < fetchN {
-			info.exhausted = len(chunks) < fetchN
+		if len(items) >= wantN || len(res.Chunks) < fetchN {
+			info.exhausted = len(res.Chunks) < fetchN
 			break
 		}
 		fetchN *= 2
@@ -362,7 +356,7 @@ func ftsPrefixQuery(q string) string {
 	return strings.Join(terms, " ")
 }
 
-func candidatesFromChunks(chunks []sqlite.Chunk) []candidateRow {
+func candidatesFromChunks(chunks []store.Chunk) []candidateRow {
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -379,8 +373,9 @@ func candidatesFromChunks(chunks []sqlite.Chunk) []candidateRow {
 	return out
 }
 
-func buildItemsFromCandidates(candidates []candidateRow, q string, opts Options, matchCaseInsensitive bool, pathTopN int, ex explain.Explain) ([]model.ResultItem, error) {
+func buildItemsFromCandidates(candidates []candidateRow, q string, opts Options, matchCaseInsensitive bool, pathTopN int, wantN int, ex explain.Explain) ([]model.ResultItem, error) {
 	items := make([]model.ResultItem, 0, len(candidates))
+	seen := map[string]int{}
 	for _, c := range candidates {
 		if len(opts.IncludeGlobs) > 0 && !anyGlobMatch(opts.IncludeGlobs, c.Path) {
 			continue
@@ -456,10 +451,18 @@ func buildItemsFromCandidates(candidates []candidateRow, q string, opts Options,
 		}
 		stopUnitize()
 
+		if pathTopN > 0 {
+			if seen[item.Path] >= pathTopN {
+				continue
+			}
+			seen[item.Path]++
+		}
 		items = append(items, item)
+		if wantN > 0 && len(items) >= wantN {
+			break
+		}
 	}
 
-	items = DedupeByPathTopN(items, pathTopN)
 	return items, nil
 }
 
@@ -561,7 +564,7 @@ func refineRangesWithFiles(items []model.ResultItem, workspaceRoot string, unitK
 	}
 }
 
-func refineSymbolRangesWithStore(s *sqlite.Store, workspaceID string, items []model.ResultItem, ex explain.Explain) (fallback int) {
+func refineSymbolRangesWithStore(s store.Store, workspaceID string, items []model.ResultItem, ex explain.Explain) (fallback int) {
 	if s == nil || len(items) == 0 {
 		return 0
 	}

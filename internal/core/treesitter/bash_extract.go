@@ -6,10 +6,10 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_bash "github.com/tree-sitter/tree-sitter-bash/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
-func extractBash(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractBash(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -28,8 +28,8 @@ func extractBash(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Commen
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -58,13 +58,13 @@ func extractBash(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Commen
 	return syms, comms, nil
 }
 
-func makeBashFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeBashFunction(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,
@@ -76,4 +76,6 @@ func makeBashFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool
 		Signature: name,
 	}, true
 }
+
+
 

@@ -23,7 +23,7 @@ func newIndexBuildCommand() *cobra.Command {
 	var workers int
 	cmd := &cobra.Command{
 		Use:   "build [path]",
-		Short: "Build (or rebuild) the local SQLite index",
+		Short: "Build (or rebuild) the local index",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			maybePrintViz(cmd)
@@ -49,6 +49,7 @@ func newIndexBuildCommand() *cobra.Command {
 			}
 
 			err = indexer.Build(root, opts.DBPath, indexer.Options{
+				Store:        opts.Store,
 				WorkspaceID:  root,
 				Workers:      workers,
 				ScanAll:      opts.ScanAll,

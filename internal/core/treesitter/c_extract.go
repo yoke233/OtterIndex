@@ -8,10 +8,10 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_c "github.com/tree-sitter/tree-sitter-c/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
-func extractC(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractC(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -30,8 +30,8 @@ func extractC(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentIn
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -68,24 +68,24 @@ func extractC(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentIn
 	return syms, comms, nil
 }
 
-func makeCFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeCFunction(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	if n == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	decl := n.ChildByFieldName("declarator")
 	if decl == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	id := firstDescendantKind(decl, map[string]struct{}{"identifier": {}})
 	if id == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	name := strings.TrimSpace(id.Utf8Text(src))
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,
@@ -98,7 +98,7 @@ func makeCFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 	}, true
 }
 
-func makeCType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInput, bool) {
+func makeCType(n *tree_sitter.Node, src []byte, kind string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
 		if id := firstDescendantKind(n, map[string]struct{}{"type_identifier": {}, "identifier": {}}); id != nil {
@@ -106,11 +106,11 @@ func makeCType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInput
 		}
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
 	sig := strings.TrimSpace(kind) + " " + name
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      strings.TrimSpace(kind),
 		Name:      name,
 		SL:        sl,

@@ -7,10 +7,10 @@ import (
 
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
-func makeComment(n *tree_sitter.Node, src []byte, lang string) sqlite.CommentInput {
+func makeComment(n *tree_sitter.Node, src []byte, lang string) store.CommentInput {
 	text := ""
 	if n != nil {
 		text = n.Utf8Text(src)
@@ -26,7 +26,7 @@ func makeComment(n *tree_sitter.Node, src []byte, lang string) sqlite.CommentInp
 
 	sl, sc, el, ec := nodeRange1Based(n)
 
-	return sqlite.CommentInput{
+	return store.CommentInput{
 		Kind: kind,
 		Text: strings.TrimRight(text, "\r\n"),
 		SL:   sl,

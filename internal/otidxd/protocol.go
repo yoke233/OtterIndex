@@ -23,6 +23,7 @@ type ErrorObject struct {
 
 type WorkspaceAddParams struct {
 	Root   string `json:"root"`
+	Store  string `json:"store,omitempty"`
 	DBPath string `json:"db_path,omitempty"`
 }
 
@@ -34,7 +35,7 @@ type IndexBuildParams struct {
 }
 
 type QueryParams struct {
-	WorkspaceID      string   `json:"workspace_id"`
+	WorkspaceID     string   `json:"workspace_id"`
 	Q               string   `json:"q"`
 	Unit            string   `json:"unit,omitempty"`
 	Limit           int      `json:"limit,omitempty"`
@@ -43,4 +44,32 @@ type QueryParams struct {
 	CaseInsensitive bool     `json:"case_insensitive,omitempty"`
 	IncludeGlobs    []string `json:"include_globs,omitempty"`
 	ExcludeGlobs    []string `json:"exclude_globs,omitempty"`
+	Show            bool     `json:"show,omitempty"`
+}
+
+type WatchStartParams struct {
+	WorkspaceID      string   `json:"workspace_id"`
+	ScanAll          bool     `json:"scan_all,omitempty"`
+	IncludeGlobs     []string `json:"include_globs,omitempty"`
+	ExcludeGlobs     []string `json:"exclude_globs,omitempty"`
+	SyncOnStart      bool     `json:"sync_on_start,omitempty"`
+	DebounceMS       int      `json:"debounce_ms,omitempty"`
+	SyncWorkers      int      `json:"sync_workers,omitempty"`
+	AdaptiveDebounce bool     `json:"adaptive_debounce,omitempty"`
+	DebounceMinMS    int      `json:"debounce_min_ms,omitempty"`
+	DebounceMaxMS    int      `json:"debounce_max_ms,omitempty"`
+	QueueMode        string   `json:"queue_mode,omitempty"`
+	AutoTune         *bool    `json:"auto_tune,omitempty"`
+}
+
+type WatchStopParams struct {
+	WorkspaceID string `json:"workspace_id"`
+}
+
+type WatchStatusParams struct {
+	WorkspaceID string `json:"workspace_id"`
+}
+
+type WatchStatusResult struct {
+	Running bool `json:"running"`
 }

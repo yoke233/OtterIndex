@@ -8,14 +8,14 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_js "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
 var jsTypeKinds = map[string]struct{}{
 	"class_declaration": {},
 }
 
-func extractJavaScript(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractJavaScript(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -34,8 +34,8 @@ func extractJavaScript(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -72,13 +72,13 @@ func extractJavaScript(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.
 	return syms, comms, nil
 }
 
-func makeJSClass(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeJSClass(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "class",
 		Name:      name,
 		SL:        sl,
@@ -91,13 +91,13 @@ func makeJSClass(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 	}, true
 }
 
-func makeJSFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeJSFunction(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,
@@ -110,7 +110,7 @@ func makeJSFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) 
 	}, true
 }
 
-func makeJSMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeJSMethod(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
 		if id := firstDescendantKind(n, map[string]struct{}{"property_identifier": {}, "identifier": {}}); id != nil {
@@ -118,7 +118,7 @@ func makeJSMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 		}
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	container := enclosingTypeName(n, src, jsTypeKinds)
 	sl, sc, el, ec := nodeRange1Based(n)
@@ -127,7 +127,7 @@ func makeJSMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 	if container != "" {
 		sig = container + "." + name
 	}
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "method",
 		Name:      name,
 		SL:        sl,

@@ -2,8 +2,8 @@
 
 本项目提供一个 **本地** 的代码/文本索引与查询工具：
 
-- `otidx`：命令行索引/查询（索引落到本地 SQLite）
-- `otidxd`：daemon 骨架（TCP JSON-RPC：`ping`/`version`）
+- `otidx`：命令行索引/查询（索引落到本地 SQLite / Bleve）
+- `otidxd`：daemon（TCP JSON-RPC：`ping`/`version`/`workspace.add`/`index.build`/`query`/`watch.*`）
 
 > 设计目标：根据关键词，返回“尽可能小的上下文单元块”，并带上文件相对路径 + 行号信息，方便携带上下文做进一步处理。
 
@@ -51,9 +51,17 @@ Windows 下推荐直接跑：`pwsh -NoProfile -File scripts/test-treesitter.ps1`
 ```powershell
 # 在当前目录（建议是你的 workspace 根）构建索引
 go run ./cmd/otidx index build .
+
+# 使用 Bleve 后端
+go run ./cmd/otidx index build . --store bleve
 ```
 
-默认数据库路径为：`.otidx/index.db`（相对当前工作目录）。
+默认数据库路径为：
+
+- SQLite：`.otidx/index.db`
+- Bleve：`.otidx/index.bleve`
+
+可用 `--store bleve` 切换到 Bleve。
 
 ### 2）关键词查询
 
@@ -78,7 +86,7 @@ go run ./cmd/otidx keyword
 - **定位信息完整**：默认输出 `path:line`，`-L` 输出 `path:line:col`，`--jsonl` 输出 `range`（行号范围）+ `matches`（命中位置）。
 - **默认就输出“单元块”**：`otidx q "..."` 直接多行打印（更适合“查代码”）；想要快速浏览/脚本管线可以用 `--compact/-L/--jsonl`。
 - **机器可读也不丢上下文**：`--jsonl --show` 会把单元块塞进 `text` 字段，方便直接喂给脚本/Agent。
-- **索引一次，多次查询**：`index build` 把内容落到本地 SQLite（可用则启用 FTS5），后续 `q` 不再全量遍历文件树，查询更快。
+- **索引一次，多次查询**：`index build` 把内容落到本地 SQLite（可用则启用 FTS5）或 Bleve，后续 `q` 不再全量遍历文件树，查询更快。
 - **过滤与忽略更符合工程习惯**：支持 `-g/-x/-A`，默认按 `.gitignore` 语义过滤，并跳过 `.git/node_modules/dist/target` 与隐藏文件。
 - **对脚本/Agent 友好**：`--jsonl` 适合直接喂给脚本；`--explain/--viz ascii` 方便调试与可解释输出；`otidxd` 预留给 IDE/Agent 的 RPC 接入。
 
@@ -195,7 +203,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-vs-rg.ps1 -Rebuild -
 python .\bench\plot_bench_svg.py --out .\bench\docs\bench-vs-rg.svg
 ```
 
-外部项目（Java/Vue/Python/C++）对比见：`bench/docs/external-projects.md`（会生成对应 SVG：`bench/docs/external-projects-vs-rg.svg`）。
+外部项目（Java/Vue/Python/C++）对比见：`bench/docs/external-projects.md`（会按语言生成 SVG：`bench/docs/external-projects-java.svg` / `bench/docs/external-projects-vue.svg` / `bench/docs/external-projects-python.svg` / `bench/docs/external-projects-cpp.svg`；图表内 otidx 为查询耗时，加载时间单独标注）。
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\bench\bench-external-projects.ps1 -Limit 20 -Repeat 3
@@ -284,21 +292,48 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
 
 协议：TCP JSON-RPC 2.0，一条请求一行 JSON（服务端按 JSON 解码）。
 
-示例请求：
+方法列表：
+
+- `ping` / `version`
+- `workspace.add`（`root`，可选 `store/db_path`；`store` 支持 `sqlite|bleve`）
+- `index.build`（`workspace_id`，可选 `scan_all/include_globs/exclude_globs`），返回 `version`
+- `query`（`workspace_id/q` 必填，`unit/limit/offset/context_lines/case_insensitive/include_globs/exclude_globs/show` 可选）
+  - 默认：`unit=block`，`limit=20`，`offset=0`，`context_lines=0`，`show=false`
+  - `show=true` 会附加 `ResultItem.text`
+- `watch.start` / `watch.stop` / `watch.status`（`workspace_id` 必填，可选 `scan_all/include_globs/exclude_globs/sync_on_start/debounce_ms/sync_workers/adaptive_debounce/debounce_min_ms/debounce_max_ms/queue_mode/auto_tune`）
+  - 返回 `{ "running": true|false }`
+  - `sync_on_start=true` 会在启动时做一次“全目录遍历 + 仅更新变更文件”的补扫（默认并发为 CPU 核心数的一半）
+  - `debounce_ms` 控制 watcher 防抖延迟（默认 200ms）
+  - `sync_workers` 控制补扫并发数（默认 CPU 核心数的一半）
+  - `adaptive_debounce=true` 时根据变更量动态调整防抖（默认区间 50-500ms，可用 `debounce_min_ms/debounce_max_ms` 覆盖）
+  - `queue_mode` 可选 `auto|direct|simple|priority`（默认 auto），控制更新队列策略
+  - `auto_tune=false` 禁用自动调参（默认启用）
+  - 若未显式传入上述参数，server 会根据现有索引的文件统计自动调参（大文件仓库倾向较低防抖与小批次）
+
+示例请求/响应：
 
 ```json
 {"jsonrpc":"2.0","method":"ping","id":1}
 {"jsonrpc":"2.0","method":"version","id":2}
+{"jsonrpc":"2.0","method":"workspace.add","id":3,"params":{"root":".","store":"sqlite"}}
+{"jsonrpc":"2.0","method":"index.build","id":4,"params":{"workspace_id":"<wsid>"}}
+{"jsonrpc":"2.0","method":"query","id":5,"params":{"workspace_id":"<wsid>","q":"hello","unit":"block","limit":10,"offset":0,"show":true}}
 ```
 
-当前仅实现 `ping` / `version`，后续可扩展为：workspace 注册、索引构建、查询接口等。
+```json
+{"jsonrpc":"2.0","id":1,"result":"pong"}
+{"jsonrpc":"2.0","id":2,"result":"0.1.0"}
+{"jsonrpc":"2.0","id":3,"result":"<wsid>"}
+{"jsonrpc":"2.0","id":4,"result":1}
+{"jsonrpc":"2.0","id":5,"result":[{"path":"a.go","range":{"sl":1,"sc":1,"el":2,"ec":1},"snippet":"hello","text":"hello\nworld"}]}
+```
 
 ---
 
 ## 说明与限制（MVP）
 
-- 需要先 `otidx index build` 生成 SQLite 索引；目前不做增量更新/监听，文件变更后建议重建索引。
-- SQLite FTS5 **默认尝试启用**；如果当前 SQLite 构建不支持 FTS5（或创建虚表失败）会自动回退到 `LIKE`（速度较慢但可用，可用 `--explain` 查看 `fts5/fts5_reason`）。
+- 需要先 `otidx index build` 生成 SQLite/Bleve 索引；目前不做增量更新/监听，文件变更后建议重建索引。
+- SQLite FTS5 **默认尝试启用**；如果当前 SQLite 构建不支持 FTS5（或创建虚表失败）会自动回退到 `LIKE`（速度较慢但可用，可用 `--explain` 查看 `fts5/fts5_reason`）。Bleve 则使用内置分词/索引，不依赖 FTS5。
 - “最小代码单元块”用 `--unit` 控制（`line/block/file/symbol`）。
   - `symbol` 依赖 tree-sitter：需要以 `-tags treesitter` 构建/运行，并且启用 CGO。
   - 当前已接入：Go/Java/Python/JavaScript/TypeScript/TSX/C/C++/PHP/C#/JSON/Bash；其他文件类型会自动降级为 `block`（`--explain` 里会标注 `symbol_fallback/unit_fallback`）。

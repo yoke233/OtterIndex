@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_workspace_path ON chunks(workspace_id, path);
+CREATE INDEX IF NOT EXISTS idx_chunks_workspace_path_range ON chunks(workspace_id, path, sl, el);
 
 CREATE TABLE IF NOT EXISTS symbols (
   id INTEGER PRIMARY KEY,

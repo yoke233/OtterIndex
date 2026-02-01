@@ -3,6 +3,7 @@ package otidxd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,24 @@ func TestHandlers_MinLoop_WorkspaceBuildQuery(t *testing.T) {
 	}
 	if len(res) == 0 || res[0].Path != "a.go" {
 		t.Fatalf("bad result: %v", res)
+	}
+}
+
+func TestWorkspaceAdd_StoreBleve_DefaultPath(t *testing.T) {
+	root := t.TempDir()
+	h := NewHandlers()
+
+	wsid, err := h.WorkspaceAdd(WorkspaceAddParams{Root: root, Store: "bleve"})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	ws, ok := h.getWorkspace(wsid)
+	if !ok {
+		t.Fatalf("workspace missing")
+	}
+	if !strings.HasSuffix(strings.ToLower(ws.dbPath), ".bleve") {
+		t.Fatalf("expected bleve path, got %q", ws.dbPath)
 	}
 }
 

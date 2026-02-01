@@ -17,10 +17,12 @@ import (
 	"otterindex/internal/core/explain"
 	"otterindex/internal/core/treesitter"
 	"otterindex/internal/core/walk"
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/backend"
+	"otterindex/internal/index/store"
 )
 
 type Options struct {
+	Store        string
 	WorkspaceID  string
 	Workers      int
 	ScanAll      bool
@@ -52,6 +54,7 @@ func Build(root string, dbPath string, opts Options) error {
 
 	if ex != nil {
 		ex.KV("phase", "build")
+		ex.KV("store", opts.Store)
 		ex.KV("workspace_id", workspaceID)
 		ex.KV("root", root)
 		ex.KV("db_path", dbPath)
@@ -90,25 +93,14 @@ func Build(root string, dbPath string, opts Options) error {
 		ex.KV("workers", workers)
 	}
 
-	chunkLines := opts.ChunkLines
-	if chunkLines <= 0 {
-		chunkLines = 40
-	}
-	overlap := opts.ChunkOverlap
-	if overlap < 0 {
-		overlap = 0
-	}
-	step := chunkLines - overlap
-	if step <= 0 {
-		step = chunkLines
-	}
+	chunkLines, overlap, step := resolveChunkParams(opts)
 	if ex != nil {
 		ex.KV("chunk_lines", chunkLines)
 		ex.KV("chunk_overlap", overlap)
 		ex.KV("chunk_step", step)
 	}
 
-	s, err := sqlite.Open(dbPath)
+	s, err := backend.Open(opts.Store, dbPath)
 	if err != nil {
 		return err
 	}
@@ -117,21 +109,25 @@ func Build(root string, dbPath string, opts Options) error {
 	if err := s.EnsureWorkspace(workspaceID, root); err != nil {
 		return err
 	}
-	if err := s.ApplyBuildPragmas(); err != nil {
-		return err
+	if applier, ok := s.(store.BuildPragmaApplier); ok {
+		if err := applier.ApplyBuildPragmas(); err != nil {
+			return err
+		}
 	}
 	if ex != nil {
 		ex.KV("fts5", s.HasFTS())
 		ex.KV("fts5_reason", s.FTSReason())
 
-		jm, _ := s.QueryPragma("journal_mode")
-		syncMode, _ := s.QueryPragma("synchronous")
-		tempStore, _ := s.QueryPragma("temp_store")
-		cacheSize, _ := s.QueryPragma("cache_size")
-		ex.KV("sqlite_journal_mode", jm)
-		ex.KV("sqlite_synchronous", syncMode)
-		ex.KV("sqlite_temp_store", tempStore)
-		ex.KV("sqlite_cache_size", cacheSize)
+		if pr, ok := s.(store.PragmaReader); ok {
+			jm, _ := pr.QueryPragma("journal_mode")
+			syncMode, _ := pr.QueryPragma("synchronous")
+			tempStore, _ := pr.QueryPragma("temp_store")
+			cacheSize, _ := pr.QueryPragma("cache_size")
+			ex.KV("sqlite_journal_mode", jm)
+			ex.KV("sqlite_synchronous", syncMode)
+			ex.KV("sqlite_temp_store", tempStore)
+			ex.KV("sqlite_cache_size", cacheSize)
+		}
 	}
 
 	stopWalk := func() {}
@@ -156,9 +152,9 @@ func Build(root string, dbPath string, opts Options) error {
 		size     int64
 		mtime    int64
 		hash     string
-		chunks   []sqlite.ChunkInput
-		symbols  []sqlite.SymbolInput
-		comments []sqlite.CommentInput
+		chunks   []store.ChunkInput
+		symbols  []store.SymbolInput
+		comments []store.CommentInput
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -189,47 +185,75 @@ func Build(root string, dbPath string, opts Options) error {
 	writerWG.Add(1)
 	go func() {
 		defer writerWG.Done()
+		batchSize := workers * 2
+		if batchSize < 4 {
+			batchSize = 4
+		}
+		if batchSize > 64 {
+			batchSize = 64
+		}
+		docLimit := 0
+		if s.Backend() == "bleve" {
+			if batchSize > 8 {
+				batchSize = 8
+			}
+			docLimit = 2000
+		}
+		batch := make([]store.FilePlan, 0, batchSize)
+		batchDocs := 0
+		flush := func() bool {
+			if len(batch) == 0 {
+				return true
+			}
+			stopWrite := func() {}
+			if ex != nil {
+				stopWrite = ex.Timer("write")
+			}
+			if err := s.ReplaceFilesBatch(workspaceID, batch); err != nil {
+				sendErr(err, errCh)
+				cancel()
+				stopWrite()
+				return false
+			}
+			stopWrite()
+			for _, plan := range batch {
+				if plan.Delete {
+					continue
+				}
+				atomic.AddInt64(&filesIndexed, 1)
+				atomic.AddInt64(&chunksWritten, int64(len(plan.Chunks)))
+				atomic.AddInt64(&symbolsWritten, int64(len(plan.Syms)))
+				atomic.AddInt64(&commentsWritten, int64(len(plan.Comms)))
+			}
+			batch = batch[:0]
+			batchDocs = 0
+			return true
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case pf, ok := <-parsed:
 				if !ok {
+					_ = flush()
 					return
 				}
-				stopWrite := func() {}
-				if ex != nil {
-					stopWrite = ex.Timer("write")
+				plan := store.FilePlan{
+					Path:   filepath.ToSlash(pf.rel),
+					Size:   pf.size,
+					MTime:  pf.mtime,
+					Hash:   pf.hash,
+					Chunks: pf.chunks,
+					Syms:   pf.symbols,
+					Comms:  pf.comments,
 				}
-				if err := s.UpsertFile(workspaceID, pf.rel, pf.size, pf.mtime, pf.hash); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
+				batch = append(batch, plan)
+				batchDocs += len(plan.Chunks) + len(plan.Syms) + len(plan.Comms)
+				if len(batch) >= batchSize || (docLimit > 0 && batchDocs >= docLimit) {
+					if !flush() {
+						return
+					}
 				}
-				if err := s.ReplaceChunksBatch(workspaceID, pf.rel, pf.chunks); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
-				}
-				if err := s.ReplaceSymbolsBatch(workspaceID, pf.rel, pf.symbols); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
-				}
-				if err := s.ReplaceCommentsBatch(workspaceID, pf.rel, pf.comments); err != nil {
-					sendErr(err, errCh)
-					cancel()
-					stopWrite()
-					return
-				}
-				stopWrite()
-				atomic.AddInt64(&filesIndexed, 1)
-				atomic.AddInt64(&chunksWritten, int64(len(pf.chunks)))
-				atomic.AddInt64(&symbolsWritten, int64(len(pf.symbols)))
-				atomic.AddInt64(&commentsWritten, int64(len(pf.comments)))
 			}
 		}
 	}()
@@ -360,14 +384,28 @@ feed:
 }
 
 func UpdateFile(root string, dbPath string, rel string, opts Options) error {
+	if strings.TrimSpace(dbPath) == "" {
+		return fmt.Errorf("dbPath is required")
+	}
+
+	s, err := backend.Open(opts.Store, dbPath)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	return UpdateFileWithStore(s, root, rel, opts, nil, false)
+}
+
+func UpdateFileWithStore(s store.Store, root string, rel string, opts Options, old *store.File, oldOK bool) error {
 	ex := opts.Explain
 
 	root = filepath.Clean(root)
 	if strings.TrimSpace(root) == "" {
 		return fmt.Errorf("root is required")
 	}
-	if strings.TrimSpace(dbPath) == "" {
-		return fmt.Errorf("dbPath is required")
+	if s == nil {
+		return fmt.Errorf("store is required")
 	}
 
 	rel = filepath.ToSlash(strings.TrimSpace(rel))
@@ -381,6 +419,165 @@ func UpdateFile(root string, dbPath string, rel string, opts Options) error {
 		workspaceID = root
 	}
 
+	if err := s.EnsureWorkspace(workspaceID, root); err != nil {
+		return err
+	}
+
+	var meta store.File
+	var ok bool
+	var err error
+	if oldOK && old != nil {
+		meta = *old
+		ok = true
+	} else {
+		meta, ok, err = s.GetFileMeta(workspaceID, rel)
+		if err != nil {
+			return err
+		}
+	}
+	plan, err := PrepareUpdatePlan(root, rel, opts, &meta, ok)
+	if err != nil {
+		return err
+	}
+	return ApplyUpdatePlan(s, workspaceID, plan, ex)
+}
+
+type UpdatePlan struct {
+	Rel    string
+	Size   int64
+	MTime  int64
+	Hash   string
+	Chunks []store.ChunkInput
+	Syms   []store.SymbolInput
+	Comms  []store.CommentInput
+	Delete bool
+	Skip   bool
+}
+
+func PrepareUpdatePlan(root string, rel string, opts Options, old *store.File, oldOK bool) (UpdatePlan, error) {
+	root = filepath.Clean(root)
+	if strings.TrimSpace(root) == "" {
+		return UpdatePlan{}, fmt.Errorf("root is required")
+	}
+
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	rel = strings.TrimPrefix(rel, "./")
+	if rel == "" || rel == "." {
+		return UpdatePlan{}, fmt.Errorf("rel path is required")
+	}
+
+	chunkLines, _, step := resolveChunkParams(opts)
+
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	st, err := os.Stat(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return UpdatePlan{Rel: rel, Delete: true}, nil
+		}
+		return UpdatePlan{}, err
+	}
+
+	size := st.Size()
+	mtime := st.ModTime().Unix()
+
+	if oldOK && old != nil && old.Size == size && old.MTime == mtime {
+		return UpdatePlan{Rel: rel, Skip: true}, nil
+	}
+
+	b, err := os.ReadFile(full)
+	if err != nil {
+		return UpdatePlan{}, err
+	}
+	if isBinary(b) {
+		return UpdatePlan{Rel: rel, Delete: true}, nil
+	}
+
+	hash := hashText(b)
+	if oldOK && old != nil && old.Hash != "" && old.Hash == hash {
+		return UpdatePlan{Rel: rel, Skip: true}, nil
+	}
+
+	chunks := chunkByLines(string(b), chunkLines, step)
+	ts := treesitter.NewProvider()
+	syms, comms, _ := ts.Extract(rel, b)
+
+	return UpdatePlan{
+		Rel:    rel,
+		Size:   size,
+		MTime:  mtime,
+		Hash:   hash,
+		Chunks: chunks,
+		Syms:   syms,
+		Comms:  comms,
+	}, nil
+}
+
+func ApplyUpdatePlan(s store.Store, workspaceID string, plan UpdatePlan, ex explain.Explain) error {
+	return ApplyUpdatePlansBatch(s, workspaceID, []UpdatePlan{plan}, ex)
+}
+
+func ApplyUpdatePlansBatch(s store.Store, workspaceID string, plans []UpdatePlan, ex explain.Explain) error {
+	if len(plans) == 0 {
+		return nil
+	}
+
+	batch := make([]store.FilePlan, 0, len(plans))
+	for _, plan := range plans {
+		if plan.Skip {
+			continue
+		}
+		batch = append(batch, store.FilePlan{
+			Path:   plan.Rel,
+			Size:   plan.Size,
+			MTime:  plan.MTime,
+			Hash:   plan.Hash,
+			Chunks: plan.Chunks,
+			Syms:   plan.Syms,
+			Comms:  plan.Comms,
+			Delete: plan.Delete,
+		})
+	}
+	if len(batch) == 0 {
+		return nil
+	}
+
+	stopWrite := func() {}
+	if ex != nil {
+		stopWrite = ex.Timer("write_batch")
+	}
+	err := s.ReplaceFilesBatch(workspaceID, batch)
+	stopWrite()
+	return err
+}
+
+func chunkByLines(text string, chunkLines int, step int) []store.ChunkInput {
+	lines := splitLines(text)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	var out []store.ChunkInput
+	for start := 0; start < len(lines); start += step {
+		end := start + chunkLines
+		if end > len(lines) {
+			end = len(lines)
+		}
+		chunkText := strings.Join(lines[start:end], "\n")
+		out = append(out, store.ChunkInput{
+			SL:    start + 1,
+			EL:    end,
+			Kind:  "chunk",
+			Title: "",
+			Text:  chunkText,
+		})
+		if end == len(lines) {
+			break
+		}
+	}
+	return out
+}
+
+func resolveChunkParams(opts Options) (int, int, int) {
 	chunkLines := opts.ChunkLines
 	if chunkLines <= 0 {
 		chunkLines = 40
@@ -393,119 +590,7 @@ func UpdateFile(root string, dbPath string, rel string, opts Options) error {
 	if step <= 0 {
 		step = chunkLines
 	}
-
-	s, err := sqlite.Open(dbPath)
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
-	if err := s.EnsureWorkspace(workspaceID, root); err != nil {
-		return err
-	}
-
-	full := filepath.Join(root, filepath.FromSlash(rel))
-	st, err := os.Stat(full)
-	if err != nil {
-		if os.IsNotExist(err) {
-			_ = s.DeleteFile(workspaceID, rel)
-			if err := s.ReplaceChunksBatch(workspaceID, rel, nil); err != nil {
-				return err
-			}
-			_ = s.ReplaceSymbolsBatch(workspaceID, rel, nil)
-			_ = s.ReplaceCommentsBatch(workspaceID, rel, nil)
-			return s.BumpVersion(workspaceID)
-		}
-		return err
-	}
-
-	size := st.Size()
-	mtime := st.ModTime().Unix()
-
-	old, ok, err := s.GetFileMeta(workspaceID, rel)
-	if err != nil {
-		return err
-	}
-	if ok && old.Size == size && old.MTime == mtime {
-		return nil
-	}
-
-	b, err := os.ReadFile(full)
-	if err != nil {
-		return err
-	}
-	if isBinary(b) {
-		_ = s.DeleteFile(workspaceID, rel)
-		if err := s.ReplaceChunksBatch(workspaceID, rel, nil); err != nil {
-			return err
-		}
-		_ = s.ReplaceSymbolsBatch(workspaceID, rel, nil)
-		_ = s.ReplaceCommentsBatch(workspaceID, rel, nil)
-		return s.BumpVersion(workspaceID)
-	}
-
-	hash := hashText(b)
-	if ok && old.Hash != "" && old.Hash == hash {
-		return nil
-	}
-
-	chunks := chunkByLines(string(b), chunkLines, step)
-
-	ts := treesitter.NewProvider()
-	syms, comms, _ := ts.Extract(rel, b)
-
-	stopWrite := func() {}
-	if ex != nil {
-		stopWrite = ex.Timer("write_one")
-	}
-	if err := s.UpsertFile(workspaceID, rel, size, mtime, hash); err != nil {
-		stopWrite()
-		return err
-	}
-	if err := s.ReplaceChunksBatch(workspaceID, rel, chunks); err != nil {
-		stopWrite()
-		return err
-	}
-	if err := s.ReplaceSymbolsBatch(workspaceID, rel, syms); err != nil {
-		stopWrite()
-		return err
-	}
-	if err := s.ReplaceCommentsBatch(workspaceID, rel, comms); err != nil {
-		stopWrite()
-		return err
-	}
-	stopWrite()
-	if err := s.BumpVersion(workspaceID); err != nil {
-		return err
-	}
-	return nil
-}
-
-func chunkByLines(text string, chunkLines int, step int) []sqlite.ChunkInput {
-	lines := splitLines(text)
-	if len(lines) == 0 {
-		return nil
-	}
-
-	var out []sqlite.ChunkInput
-	for start := 0; start < len(lines); start += step {
-		end := start + chunkLines
-		if end > len(lines) {
-			end = len(lines)
-		}
-		chunkText := strings.Join(lines[start:end], "\n")
-		out = append(out, sqlite.ChunkInput{
-			SL:    start + 1,
-			EL:    end,
-			Kind:  "chunk",
-			Title: "",
-			Text:  chunkText,
-		})
-		if end == len(lines) {
-			break
-		}
-	}
-	return out
+	return chunkLines, overlap, step
 }
 
 func hashText(b []byte) string {

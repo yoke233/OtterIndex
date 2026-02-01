@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-type ChunkInput struct {
-	SL, EL int
-	Kind   string
-	Title  string
-	Text   string
-}
-
 func (s *Store) ReplaceChunksBatch(workspaceID string, path string, chunks []ChunkInput) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("store is not open")

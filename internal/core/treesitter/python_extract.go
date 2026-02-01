@@ -6,14 +6,14 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_python "github.com/tree-sitter/tree-sitter-python/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
 var pythonTypeKinds = map[string]struct{}{
 	"class_definition": {},
 }
 
-func extractPython(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractPython(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -32,8 +32,8 @@ func extractPython(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comm
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -66,13 +66,13 @@ func extractPython(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comm
 	return syms, comms, nil
 }
 
-func makePythonClass(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makePythonClass(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "class",
 		Name:      name,
 		SL:        sl,
@@ -85,10 +85,10 @@ func makePythonClass(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 	}, true
 }
 
-func makePythonFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makePythonFunction(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	container := enclosingTypeName(n, src, pythonTypeKinds)
 	sl, sc, el, ec := nodeRange1Based(n)
@@ -97,7 +97,7 @@ func makePythonFunction(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bo
 	if container != "" {
 		sig = container + "." + name
 	}
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,

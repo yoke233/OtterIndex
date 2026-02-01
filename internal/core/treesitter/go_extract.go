@@ -8,10 +8,10 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
-func extractGo(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractGo(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -30,8 +30,8 @@ func extractGo(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentI
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -65,9 +65,9 @@ func extractGo(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentI
 	return syms, comms, nil
 }
 
-func makeGoFunction(fn *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeGoFunction(fn *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	if fn == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	nameNode := fn.ChildByFieldName("name")
 	name := ""
@@ -75,11 +75,11 @@ func makeGoFunction(fn *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 		name = strings.TrimSpace(nameNode.Utf8Text(src))
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(fn)
 
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "function",
 		Name:      name,
 		SL:        sl,
@@ -92,9 +92,9 @@ func makeGoFunction(fn *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 	}, true
 }
 
-func makeGoMethod(m *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeGoMethod(m *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	if m == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	nameNode := m.ChildByFieldName("name")
 	name := ""
@@ -102,7 +102,7 @@ func makeGoMethod(m *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 		name = strings.TrimSpace(nameNode.Utf8Text(src))
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 
 	container := strings.TrimSpace(goMethodReceiverType(m, src))
@@ -114,7 +114,7 @@ func makeGoMethod(m *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 
 	sl, sc, el, ec := nodeRange1Based(m)
 
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "method",
 		Name:      name,
 		SL:        sl,
@@ -127,9 +127,9 @@ func makeGoMethod(m *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
 	}, true
 }
 
-func makeGoTypeSpec(ts *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeGoTypeSpec(ts *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	if ts == nil {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 
 	nameNode := ts.ChildByFieldName("name")
@@ -138,7 +138,7 @@ func makeGoTypeSpec(ts *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 		name = strings.TrimSpace(nameNode.Utf8Text(src))
 	}
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 
 	kind := "type"
@@ -155,7 +155,7 @@ func makeGoTypeSpec(ts *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 
 	sl, sc, el, ec := nodeRange1Based(ts)
 
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      kind,
 		Name:      name,
 		SL:        sl,
@@ -168,7 +168,7 @@ func makeGoTypeSpec(ts *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool)
 	}, true
 }
 
-func makeGoComment(c *tree_sitter.Node, src []byte) sqlite.CommentInput {
+func makeGoComment(c *tree_sitter.Node, src []byte) store.CommentInput {
 	text := ""
 	if c != nil {
 		text = c.Utf8Text(src)
@@ -183,7 +183,7 @@ func makeGoComment(c *tree_sitter.Node, src []byte) sqlite.CommentInput {
 
 	sl, sc, el, ec := nodeRange1Based(c)
 
-	return sqlite.CommentInput{
+	return store.CommentInput{
 		Kind: kind,
 		Text: strings.TrimRight(text, "\r\n"),
 		SL:   sl,

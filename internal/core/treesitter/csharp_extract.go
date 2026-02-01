@@ -8,7 +8,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_c_sharp "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/store"
 )
 
 var csharpTypeKinds = map[string]struct{}{
@@ -19,7 +19,7 @@ var csharpTypeKinds = map[string]struct{}{
 	"enum_declaration":      {},
 }
 
-func extractCSharp(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.CommentInput, error) {
+func extractCSharp(path string, src []byte) ([]store.SymbolInput, []store.CommentInput, error) {
 	_ = path
 
 	parser := tree_sitter.NewParser()
@@ -38,8 +38,8 @@ func extractCSharp(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comm
 		return nil, nil, nil
 	}
 
-	var syms []sqlite.SymbolInput
-	var comms []sqlite.CommentInput
+	var syms []store.SymbolInput
+	var comms []store.CommentInput
 
 	var walk func(n *tree_sitter.Node)
 	walk = func(n *tree_sitter.Node) {
@@ -96,13 +96,13 @@ func extractCSharp(path string, src []byte) ([]sqlite.SymbolInput, []sqlite.Comm
 	return syms, comms, nil
 }
 
-func makeCSharpNamespace(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeCSharpNamespace(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "namespace",
 		Name:      name,
 		SL:        sl,
@@ -115,14 +115,14 @@ func makeCSharpNamespace(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, b
 	}, true
 }
 
-func makeCSharpType(n *tree_sitter.Node, src []byte, kind string) (sqlite.SymbolInput, bool) {
+func makeCSharpType(n *tree_sitter.Node, src []byte, kind string) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	sl, sc, el, ec := nodeRange1Based(n)
 	sig := strings.TrimSpace(kind) + " " + name
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      strings.TrimSpace(kind),
 		Name:      name,
 		SL:        sl,
@@ -135,10 +135,10 @@ func makeCSharpType(n *tree_sitter.Node, src []byte, kind string) (sqlite.Symbol
 	}, true
 }
 
-func makeCSharpMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeCSharpMethod(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	container := enclosingTypeName(n, src, csharpTypeKinds)
 	sl, sc, el, ec := nodeRange1Based(n)
@@ -147,7 +147,7 @@ func makeCSharpMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool
 	if container != "" {
 		sig = container + "." + name
 	}
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "method",
 		Name:      name,
 		SL:        sl,
@@ -160,10 +160,10 @@ func makeCSharpMethod(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool
 	}, true
 }
 
-func makeCSharpConstructor(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput, bool) {
+func makeCSharpConstructor(n *tree_sitter.Node, src []byte) (store.SymbolInput, bool) {
 	name := trimNodeText(n.ChildByFieldName("name"), src)
 	if name == "" {
-		return sqlite.SymbolInput{}, false
+		return store.SymbolInput{}, false
 	}
 	container := enclosingTypeName(n, src, csharpTypeKinds)
 	sl, sc, el, ec := nodeRange1Based(n)
@@ -172,7 +172,7 @@ func makeCSharpConstructor(n *tree_sitter.Node, src []byte) (sqlite.SymbolInput,
 	if container != "" {
 		sig = container + "." + name
 	}
-	return sqlite.SymbolInput{
+	return store.SymbolInput{
 		Kind:      "constructor",
 		Name:      name,
 		SL:        sl,

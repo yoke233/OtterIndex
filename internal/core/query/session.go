@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"otterindex/internal/index/sqlite"
+	"otterindex/internal/index/backend"
 	"otterindex/internal/model"
 )
 
@@ -330,7 +330,7 @@ func queryFromCandidates(dbPath string, workspaceID string, q string, opts Optio
 	if ex != nil {
 		stopMatch = ex.Timer("match")
 	}
-	items, err := buildItemsFromCandidates(env.candidates, q, opts, matchCaseInsensitive, pathTopN, ex)
+	items, err := buildItemsFromCandidates(env.candidates, q, opts, matchCaseInsensitive, pathTopN, wantN, ex)
 	stopMatch()
 	if err != nil {
 		return nil, err
@@ -347,10 +347,10 @@ func queryFromCandidates(dbPath string, workspaceID string, q string, opts Optio
 		if ex != nil {
 			stopSymbol = ex.Timer("symbol")
 		}
-		if s, err := sqlite.Open(dbPath); err == nil {
-			_ = s.EnsureWorkspace(workspaceID, "")
-			fallback := refineSymbolRangesWithStore(s, workspaceID, items, ex)
-			_ = s.Close()
+		if st, err := backend.Open(opts.Store, dbPath); err == nil {
+			_ = st.EnsureWorkspace(workspaceID, "")
+			fallback := refineSymbolRangesWithStore(st, workspaceID, items, ex)
+			_ = st.Close()
 			if ex != nil && fallback > 0 {
 				ex.KV("unit_fallback", "symbol->block")
 			}
@@ -378,6 +378,9 @@ func queryFromCandidates(dbPath string, workspaceID string, q string, opts Optio
 func makeSessionKey(dbPath string, workspaceID string, opts Options) string {
 	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "ws=%s|db=%s", workspaceID, dbPath)
+	if storeName := strings.TrimSpace(opts.Store); storeName != "" {
+		_, _ = fmt.Fprintf(&b, "|store=%s", storeName)
+	}
 	_, _ = fmt.Fprintf(&b, "|unit=%s|i=%t", opts.Unit, opts.CaseInsensitive)
 	_, _ = fmt.Fprintf(&b, "|limit=%d|offset=%d", opts.Limit, opts.Offset)
 	_, _ = fmt.Fprintf(&b, "|ctx=%d", opts.ContextLines)
