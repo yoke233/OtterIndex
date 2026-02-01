@@ -294,6 +294,7 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
   - `show=true` 会附加 `ResultItem.text`
 - `watch.start` / `watch.stop` / `watch.status`（`workspace_id` 必填，可选 `scan_all/include_globs/exclude_globs/sync_on_start`）
   - 返回 `{ "running": true|false }`
+  - `sync_on_start=true` 会在启动时做一次“全目录遍历 + 仅更新变更文件”的补扫（默认并发为 CPU 核心数的一半）
 
 示例请求/响应：
 
