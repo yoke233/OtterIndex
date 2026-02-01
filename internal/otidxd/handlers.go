@@ -226,12 +226,19 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}
 	h.mu.Unlock()
 
+	tuning, autoDebounce, err := autoTuneWatch(ws.dbPath, wsid)
+	if err != nil {
+		return WatchStatusResult{}, err
+	}
+
+	autoParams := applyAutoParams(p, autoDebounce)
+
 	uq := newUpdateQueue(rootAbs, ws.dbPath, wsid, indexer.Options{
 		WorkspaceID:  wsid,
 		ScanAll:      p.ScanAll,
 		IncludeGlobs: p.IncludeGlobs,
 		ExcludeGlobs: p.ExcludeGlobs,
-	})
+	}, tuning)
 
 	w, err := watch.NewWatcherWithOptions(ws.root, ws.dbPath, indexer.Options{
 		WorkspaceID:  wsid,
@@ -239,10 +246,10 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 		IncludeGlobs: p.IncludeGlobs,
 		ExcludeGlobs: p.ExcludeGlobs,
 	}, watch.Options{
-		Debounce:         debounceFromParams(p.DebounceMS),
-		AdaptiveDebounce: p.AdaptiveDebounce,
-		DebounceMin:      debounceFromParams(p.DebounceMinMS),
-		DebounceMax:      debounceFromParams(p.DebounceMaxMS),
+		Debounce:         debounceFromParams(autoParams.DebounceMS),
+		AdaptiveDebounce: autoParams.AdaptiveDebounce,
+		DebounceMin:      debounceFromParams(autoParams.DebounceMinMS),
+		DebounceMax:      debounceFromParams(autoParams.DebounceMaxMS),
 		UpdateFunc: func(paths []string) {
 			if uq != nil {
 				uq.Enqueue(paths)
@@ -264,13 +271,13 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	h.watchers[wsid] = &watcherEntry{w: w, cancel: cancel, done: done, queue: uq}
 	h.mu.Unlock()
 
-	if p.SyncOnStart {
+	if autoParams.SyncOnStart {
 		if err := syncChangedFiles(ws.root, ws.dbPath, indexer.Options{
 			WorkspaceID:  wsid,
 			ScanAll:      p.ScanAll,
 			IncludeGlobs: p.IncludeGlobs,
 			ExcludeGlobs: p.ExcludeGlobs,
-		}, p.SyncWorkers); err != nil {
+		}, autoParams.SyncWorkers); err != nil {
 			return WatchStatusResult{}, err
 		}
 	}
@@ -623,14 +630,112 @@ func debounceFromParams(ms int) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
+type watchAutoParams struct {
+	DebounceMS       int
+	AdaptiveDebounce bool
+	DebounceMinMS    int
+	DebounceMaxMS    int
+	SyncWorkers      int
+	SyncOnStart      bool
+}
+
+func applyAutoParams(p WatchStartParams, auto watchAutoParams) watchAutoParams {
+	out := auto
+	out.SyncOnStart = p.SyncOnStart
+	if p.DebounceMS > 0 {
+		out.DebounceMS = p.DebounceMS
+		out.AdaptiveDebounce = false
+	}
+	if p.AdaptiveDebounce {
+		out.AdaptiveDebounce = true
+	}
+	if p.DebounceMinMS > 0 {
+		out.DebounceMinMS = p.DebounceMinMS
+	}
+	if p.DebounceMaxMS > 0 {
+		out.DebounceMaxMS = p.DebounceMaxMS
+	}
+	if p.SyncWorkers > 0 {
+		out.SyncWorkers = p.SyncWorkers
+	}
+	return out
+}
+
+func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchAutoParams, error) {
+	tuning := defaultQueueTuning()
+	auto := watchAutoParams{
+		DebounceMS:       0,
+		AdaptiveDebounce: true,
+		DebounceMinMS:    50,
+		DebounceMaxMS:    500,
+		SyncWorkers:      0,
+	}
+
+	s, err := sqlite.Open(dbPath)
+	if err != nil {
+		return tuning, auto, err
+	}
+	defer s.Close()
+
+	count, total, err := s.GetFilesStats(workspaceID)
+	if err != nil {
+		return tuning, auto, err
+	}
+	if count <= 0 {
+		return tuning, auto, nil
+	}
+	avg := total / int64(count)
+
+	switch {
+	case count < 5000 && avg > 512*1024:
+		auto.AdaptiveDebounce = false
+		auto.DebounceMS = 100
+		auto.DebounceMinMS = 50
+		auto.DebounceMaxMS = 200
+		if auto.SyncWorkers == 0 {
+			auto.SyncWorkers = 2
+		}
+		tuning = updateQueueTuning{
+			IntervalSmall: 40 * time.Millisecond,
+			IntervalMed:   60 * time.Millisecond,
+			IntervalLarge: 80 * time.Millisecond,
+			IntervalXL:    120 * time.Millisecond,
+			BatchSmall:    64,
+			BatchMed:      128,
+			BatchLarge:    256,
+			BatchXL:       512,
+		}
+	case count > 20000 && avg < 128*1024:
+		auto.AdaptiveDebounce = true
+		auto.DebounceMinMS = 80
+		auto.DebounceMaxMS = 800
+		if auto.SyncWorkers == 0 {
+			auto.SyncWorkers = 0
+		}
+		tuning = updateQueueTuning{
+			IntervalSmall: 80 * time.Millisecond,
+			IntervalMed:   150 * time.Millisecond,
+			IntervalLarge: 300 * time.Millisecond,
+			IntervalXL:    600 * time.Millisecond,
+			BatchSmall:    512,
+			BatchMed:      1024,
+			BatchLarge:    2048,
+			BatchXL:       4096,
+		}
+	default:
+		tuning = defaultQueueTuning()
+	}
+
+	return tuning, auto, nil
+}
+
 type updateQueue struct {
 	rootAbs     string
 	dbPath      string
 	opts        indexer.Options
 	workspaceID string
 
-	flushEvery time.Duration
-	maxBatch   int
+	tuning updateQueueTuning
 
 	mu        sync.Mutex
 	pending   map[string]struct{}
@@ -640,14 +745,27 @@ type updateQueue struct {
 	lastFlush time.Time
 }
 
-func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts indexer.Options) *updateQueue {
+type updateQueueTuning struct {
+	IntervalSmall time.Duration
+	IntervalMed   time.Duration
+	IntervalLarge time.Duration
+	IntervalXL    time.Duration
+	BatchSmall    int
+	BatchMed      int
+	BatchLarge    int
+	BatchXL       int
+}
+
+func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts indexer.Options, tuning updateQueueTuning) *updateQueue {
+	if tuning.IntervalSmall <= 0 {
+		tuning = defaultQueueTuning()
+	}
 	q := &updateQueue{
 		rootAbs:     rootAbs,
 		dbPath:      dbPath,
 		opts:        opts,
 		workspaceID: workspaceID,
-		flushEvery:  100 * time.Millisecond,
-		maxBatch:    512,
+		tuning:      tuning,
 		pending:     map[string]struct{}{},
 		ch:          make(chan []string, 64),
 		done:        make(chan struct{}),
@@ -767,13 +885,13 @@ func (q *updateQueue) run() {
 func (q *updateQueue) desired(n int) (time.Duration, int) {
 	switch {
 	case n <= 50:
-		return 50 * time.Millisecond, 256
+		return q.tuning.IntervalSmall, q.tuning.BatchSmall
 	case n <= 200:
-		return 100 * time.Millisecond, 512
+		return q.tuning.IntervalMed, q.tuning.BatchMed
 	case n <= 1000:
-		return 200 * time.Millisecond, 1024
+		return q.tuning.IntervalLarge, q.tuning.BatchLarge
 	default:
-		return 400 * time.Millisecond, 2048
+		return q.tuning.IntervalXL, q.tuning.BatchXL
 	}
 }
 
@@ -806,4 +924,17 @@ func (q *updateQueue) prioritize(paths []string) []string {
 	out = append(out, medium...)
 	out = append(out, large...)
 	return out
+}
+
+func defaultQueueTuning() updateQueueTuning {
+	return updateQueueTuning{
+		IntervalSmall: 50 * time.Millisecond,
+		IntervalMed:   100 * time.Millisecond,
+		IntervalLarge: 200 * time.Millisecond,
+		IntervalXL:    400 * time.Millisecond,
+		BatchSmall:    256,
+		BatchMed:      512,
+		BatchLarge:    1024,
+		BatchXL:       2048,
+	}
 }

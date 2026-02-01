@@ -217,6 +217,29 @@ func (s *Store) GetFileMeta(workspaceID string, path string) (File, bool, error)
 	return f, true, nil
 }
 
+func (s *Store) GetFilesStats(workspaceID string) (int, int64, error) {
+	if s == nil || s.db == nil {
+		return 0, 0, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return 0, 0, fmt.Errorf("workspaceID is required")
+	}
+
+	var count int
+	var total sql.NullInt64
+	if err := s.db.QueryRow(
+		`SELECT COUNT(1), COALESCE(SUM(size), 0) FROM files WHERE workspace_id = ?`,
+		workspaceID,
+	).Scan(&count, &total); err != nil {
+		return 0, 0, err
+	}
+	if !total.Valid {
+		return count, 0, nil
+	}
+	return count, total.Int64, nil
+}
+
 func (s *Store) ListFilesMeta(workspaceID string) (map[string]File, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("store is not open")

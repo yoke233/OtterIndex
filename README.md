@@ -298,6 +298,7 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
   - `debounce_ms` 控制 watcher 防抖延迟（默认 200ms）
   - `sync_workers` 控制补扫并发数（默认 CPU 核心数的一半）
   - `adaptive_debounce=true` 时根据变更量动态调整防抖（默认区间 50-500ms，可用 `debounce_min_ms/debounce_max_ms` 覆盖）
+  - 若未显式传入上述参数，server 会根据现有索引的文件统计自动调参（大文件仓库倾向较低防抖与小批次）
 
 示例请求/响应：
 
