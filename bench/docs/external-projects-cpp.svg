@@ -2,54 +2,54 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="820" height="690" viewBox="0 0 820 690">
 <style>text{font-family:Segoe UI, Microsoft YaHei, Arial, sans-serif;}</style>
 <text x="80" y="36" font-size="20" fill="#222">C/C++（gdmplab）</text>
-<text x="80" y="60" font-size="12" fill="#666">2026-02-01 21:21:05</text>
+<text x="80" y="60" font-size="12" fill="#666">2026-02-01 21:25:56 | ripgrep 14.1.1 (rev 4649aa9700)</text>
 <rect x="560" y="20" width="220" height="44" fill="white" opacity="0.9"/>
 <rect x="568" y="30" width="14" height="14" fill="#4C78A8"/>
-<text x="588" y="42" font-size="12" fill="#222">otidx (ms)</text>
+<text x="588" y="42" font-size="12" fill="#222">otidx 查询（扣加载）</text>
 <rect x="672" y="30" width="14" height="14" fill="#F58518"/>
 <text x="692" y="42" font-size="12" fill="#222">rg (ms)</text>
 <rect x="80" y="64" width="700" height="30" fill="white" opacity="0.85"/>
-<text x="82" y="84" font-size="12" fill="#444">加载时间(索引构建): 3714ms</text>
+<text x="82" y="84" font-size="12" fill="#444">加载时间(otidx wall - query): 中位 72ms (min 65 / max 75) | 加载时间(索引构建): 9673ms</text>
 <line x1="80" y1="520.00" x2="780" y2="520.00" stroke="#e5e5e5" stroke-width="1"/>
 <text x="70" y="524.00" font-size="11" text-anchor="end" fill="#555">0</text>
-<line x1="80" y1="450.13" x2="780" y2="450.13" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="454.13" font-size="11" text-anchor="end" fill="#555">272</text>
+<line x1="80" y1="453.33" x2="780" y2="453.33" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="457.33" font-size="11" text-anchor="end" fill="#555">10</text>
 <line x1="80" y1="380.00" x2="780" y2="380.00" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="384.00" font-size="11" text-anchor="end" fill="#555">545</text>
-<line x1="80" y1="310.13" x2="780" y2="310.13" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="314.13" font-size="11" text-anchor="end" fill="#555">817</text>
+<text x="70" y="384.00" font-size="11" text-anchor="end" fill="#555">21</text>
+<line x1="80" y1="313.33" x2="780" y2="313.33" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="317.33" font-size="11" text-anchor="end" fill="#555">31</text>
 <line x1="80" y1="240.00" x2="780" y2="240.00" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="244.00" font-size="11" text-anchor="end" fill="#555">1090</text>
-<line x1="80" y1="170.13" x2="780" y2="170.13" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="174.13" font-size="11" text-anchor="end" fill="#555">1362</text>
+<text x="70" y="244.00" font-size="11" text-anchor="end" fill="#555">42</text>
+<line x1="80" y1="173.33" x2="780" y2="173.33" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="177.33" font-size="11" text-anchor="end" fill="#555">52</text>
 <line x1="80" y1="100.00" x2="780" y2="100.00" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="104.00" font-size="11" text-anchor="end" fill="#555">1635</text>
+<text x="70" y="104.00" font-size="11" text-anchor="end" fill="#555">63</text>
 <line x1="80" y1="520" x2="780" y2="520" stroke="#444" stroke-width="1.2"/>
 <line x1="80" y1="100" x2="80" y2="520" stroke="#444" stroke-width="1.2"/>
-<rect x="103.00" y="154.97" width="42" height="365.03" fill="#4C78A8"/>
-<rect x="155.00" y="508.70" width="42" height="11.30" fill="#F58518"/>
-<text x="124.00" y="148.97" font-size="11" text-anchor="middle" fill="#222">1421</text>
-<text x="176.00" y="502.70" font-size="11" text-anchor="middle" fill="#222">44</text>
-<text x="150.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 150.00 548.00)">include (symbol, fallback)</text>
-<rect x="243.00" y="160.88" width="42" height="359.12" fill="#4C78A8"/>
-<rect x="295.00" y="509.21" width="42" height="10.79" fill="#F58518"/>
-<text x="264.00" y="154.88" font-size="11" text-anchor="middle" fill="#222">1398</text>
-<text x="316.00" y="503.21" font-size="11" text-anchor="middle" fill="#222">42</text>
-<text x="290.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 290.00 548.00)">include (line)</text>
-<rect x="383.00" y="272.88" width="42" height="247.12" fill="#4C78A8"/>
-<rect x="435.00" y="499.19" width="42" height="20.81" fill="#F58518"/>
-<text x="404.00" y="266.88" font-size="11" text-anchor="middle" fill="#222">962</text>
-<text x="456.00" y="493.19" font-size="11" text-anchor="middle" fill="#222">81</text>
-<text x="430.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 430.00 548.00)">add_executable (line)</text>
-<rect x="523.00" y="349.94" width="42" height="170.06" fill="#4C78A8"/>
-<rect x="575.00" y="509.72" width="42" height="10.28" fill="#F58518"/>
-<text x="544.00" y="343.94" font-size="11" text-anchor="middle" fill="#222">662</text>
-<text x="596.00" y="503.72" font-size="11" text-anchor="middle" fill="#222">40</text>
+<rect x="103.00" y="500.00" width="42" height="20.00" fill="#4C78A8"/>
+<rect x="155.00" y="160.00" width="42" height="360.00" fill="#F58518"/>
+<text x="124.00" y="494.00" font-size="11" text-anchor="middle" fill="#222">3</text>
+<text x="176.00" y="154.00" font-size="11" text-anchor="middle" fill="#222">54</text>
+<text x="150.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 150.00 548.00)">add_executable (line)</text>
+<rect x="243.00" y="373.33" width="42" height="146.67" fill="#4C78A8"/>
+<rect x="295.00" y="280.00" width="42" height="240.00" fill="#F58518"/>
+<text x="264.00" y="367.33" font-size="11" text-anchor="middle" fill="#222">22</text>
+<text x="316.00" y="274.00" font-size="11" text-anchor="middle" fill="#222">36</text>
+<text x="290.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 290.00 548.00)">include (symbol, fallback)</text>
+<rect x="383.00" y="360.00" width="42" height="160.00" fill="#4C78A8"/>
+<rect x="435.00" y="286.67" width="42" height="233.33" fill="#F58518"/>
+<text x="404.00" y="354.00" font-size="11" text-anchor="middle" fill="#222">24</text>
+<text x="456.00" y="280.67" font-size="11" text-anchor="middle" fill="#222">35</text>
+<text x="430.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 430.00 548.00)">include (line)</text>
+<rect x="523.00" y="380.00" width="42" height="140.00" fill="#4C78A8"/>
+<rect x="575.00" y="306.67" width="42" height="213.33" fill="#F58518"/>
+<text x="544.00" y="374.00" font-size="11" text-anchor="middle" fill="#222">21</text>
+<text x="596.00" y="300.67" font-size="11" text-anchor="middle" fill="#222">32</text>
 <text x="570.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 570.00 548.00)">namespace (line)</text>
-<rect x="663.00" y="424.18" width="42" height="95.82" fill="#4C78A8"/>
-<rect x="715.00" y="509.47" width="42" height="10.53" fill="#F58518"/>
-<text x="684.00" y="418.18" font-size="11" text-anchor="middle" fill="#222">373</text>
-<text x="736.00" y="503.47" font-size="11" text-anchor="middle" fill="#222">41</text>
+<rect x="663.00" y="406.67" width="42" height="113.33" fill="#4C78A8"/>
+<rect x="715.00" y="306.67" width="42" height="213.33" fill="#F58518"/>
+<text x="684.00" y="400.67" font-size="11" text-anchor="middle" fill="#222">17</text>
+<text x="736.00" y="300.67" font-size="11" text-anchor="middle" fill="#222">32</text>
 <text x="710.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 710.00 548.00)">template (line)</text>
-<text x="80" y="662" font-size="11" fill="#666">说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。图中 otidx 为查询 wall time。</text>
+<text x="80" y="662" font-size="11" fill="#666">说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。图中 otidx 为查询耗时（已扣除加载）。</text>
 </svg>
