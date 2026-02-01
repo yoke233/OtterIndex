@@ -93,18 +93,7 @@ func Build(root string, dbPath string, opts Options) error {
 		ex.KV("workers", workers)
 	}
 
-	chunkLines := opts.ChunkLines
-	if chunkLines <= 0 {
-		chunkLines = 40
-	}
-	overlap := opts.ChunkOverlap
-	if overlap < 0 {
-		overlap = 0
-	}
-	step := chunkLines - overlap
-	if step <= 0 {
-		step = chunkLines
-	}
+	chunkLines, overlap, step := resolveChunkParams(opts)
 	if ex != nil {
 		ex.KV("chunk_lines", chunkLines)
 		ex.KV("chunk_overlap", overlap)
@@ -197,16 +186,21 @@ func Build(root string, dbPath string, opts Options) error {
 	go func() {
 		defer writerWG.Done()
 		batchSize := workers * 2
-		if s.Backend() == "bleve" {
-			batchSize = 1
-		}
 		if batchSize < 4 {
 			batchSize = 4
 		}
 		if batchSize > 64 {
 			batchSize = 64
 		}
+		docLimit := 0
+		if s.Backend() == "bleve" {
+			if batchSize > 8 {
+				batchSize = 8
+			}
+			docLimit = 2000
+		}
 		batch := make([]store.FilePlan, 0, batchSize)
+		batchDocs := 0
 		flush := func() bool {
 			if len(batch) == 0 {
 				return true
@@ -232,6 +226,7 @@ func Build(root string, dbPath string, opts Options) error {
 				atomic.AddInt64(&commentsWritten, int64(len(plan.Comms)))
 			}
 			batch = batch[:0]
+			batchDocs = 0
 			return true
 		}
 		for {
@@ -243,7 +238,7 @@ func Build(root string, dbPath string, opts Options) error {
 					_ = flush()
 					return
 				}
-				batch = append(batch, store.FilePlan{
+				plan := store.FilePlan{
 					Path:   filepath.ToSlash(pf.rel),
 					Size:   pf.size,
 					MTime:  pf.mtime,
@@ -251,8 +246,10 @@ func Build(root string, dbPath string, opts Options) error {
 					Chunks: pf.chunks,
 					Syms:   pf.symbols,
 					Comms:  pf.comments,
-				})
-				if len(batch) >= batchSize {
+				}
+				batch = append(batch, plan)
+				batchDocs += len(plan.Chunks) + len(plan.Syms) + len(plan.Comms)
+				if len(batch) >= batchSize || (docLimit > 0 && batchDocs >= docLimit) {
 					if !flush() {
 						return
 					}
@@ -422,19 +419,6 @@ func UpdateFileWithStore(s store.Store, root string, rel string, opts Options, o
 		workspaceID = root
 	}
 
-	chunkLines := opts.ChunkLines
-	if chunkLines <= 0 {
-		chunkLines = 40
-	}
-	overlap := opts.ChunkOverlap
-	if overlap < 0 {
-		overlap = 0
-	}
-	step := chunkLines - overlap
-	if step <= 0 {
-		step = chunkLines
-	}
-
 	if err := s.EnsureWorkspace(workspaceID, root); err != nil {
 		return err
 	}
@@ -482,18 +466,7 @@ func PrepareUpdatePlan(root string, rel string, opts Options, old *store.File, o
 		return UpdatePlan{}, fmt.Errorf("rel path is required")
 	}
 
-	chunkLines := opts.ChunkLines
-	if chunkLines <= 0 {
-		chunkLines = 40
-	}
-	overlap := opts.ChunkOverlap
-	if overlap < 0 {
-		overlap = 0
-	}
-	step := chunkLines - overlap
-	if step <= 0 {
-		step = chunkLines
-	}
+	chunkLines, _, step := resolveChunkParams(opts)
 
 	full := filepath.Join(root, filepath.FromSlash(rel))
 	st, err := os.Stat(full)
@@ -602,6 +575,22 @@ func chunkByLines(text string, chunkLines int, step int) []store.ChunkInput {
 		}
 	}
 	return out
+}
+
+func resolveChunkParams(opts Options) (int, int, int) {
+	chunkLines := opts.ChunkLines
+	if chunkLines <= 0 {
+		chunkLines = 40
+	}
+	overlap := opts.ChunkOverlap
+	if overlap < 0 {
+		overlap = 0
+	}
+	step := chunkLines - overlap
+	if step <= 0 {
+		step = chunkLines
+	}
+	return chunkLines, overlap, step
 }
 
 func hashText(b []byte) string {

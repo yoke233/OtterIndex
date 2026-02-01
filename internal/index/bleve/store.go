@@ -22,6 +22,8 @@ const (
 	docTypeChunk   = "chunk"
 	docTypeSymbol  = "symbol"
 	docTypeComment = "comment"
+
+	bleveIndexComments = false
 )
 
 type Store struct {
@@ -470,7 +472,10 @@ func (s *Store) ReplaceFilesBatch(workspaceID string, plans []store.FilePlan) er
 				Hash:         strings.TrimSpace(plan.Hash),
 				ChunkCount:   len(plan.Chunks),
 				SymbolCount:  len(plan.Syms),
-				CommentCount: len(plan.Comms),
+				CommentCount: 0,
+			}
+			if bleveIndexComments {
+				meta.CommentCount = len(plan.Comms)
 			}
 			buf, err := encode(meta)
 			if err != nil {
@@ -509,15 +514,24 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 	q := bleve.NewConjunctionQuery(baseQ, wsQ, typeQ)
 
 	req := bleve.NewSearchRequestOptions(q, limit, 0, false)
-	req.Fields = []string{"path", "sl", "el", "kind", "title", "text"}
-	req.Highlight = bleve.NewHighlightWithStyle("html")
-	req.Highlight.Fields = []string{"text"}
+	req.Fields = []string{"path", "sl", "el", "kind"}
 	req.SortBy([]string{"path", "sl", "el"})
 
 	res, err := s.idx.Search(req)
 	if err != nil {
 		return store.SearchResult{}, err
 	}
+
+	root := ""
+	if ws, err := s.GetWorkspace(workspaceID); err == nil {
+		root = strings.TrimSpace(ws.Root)
+		if root != "" && !filepath.IsAbs(root) {
+			if abs, err := filepath.Abs(root); err == nil {
+				root = abs
+			}
+		}
+	}
+	lineCache := map[string][]string{}
 
 	out := make([]store.Chunk, 0, len(res.Hits))
 	for _, hit := range res.Hits {
@@ -536,16 +550,11 @@ func (s *Store) SearchChunks(workspaceID string, keyword string, limit int, case
 		if v, ok := hit.Fields["kind"].(string); ok {
 			chunk.Kind = v
 		}
-		if v, ok := hit.Fields["title"].(string); ok {
-			chunk.Title = v
+		if chunk.Kind == "" {
+			chunk.Kind = "chunk"
 		}
-		if v, ok := hit.Fields["text"].(string); ok {
-			chunk.Text = v
-		}
-		if hit.Fragments != nil {
-			if frags := hit.Fragments["text"]; len(frags) > 0 {
-				chunk.Snippet = normalizeSnippet(frags[0])
-			}
+		if root != "" && chunk.Path != "" && chunk.SL > 0 && chunk.EL > 0 {
+			chunk.Text = readChunkText(root, chunk.Path, chunk.SL, chunk.EL, lineCache)
 		}
 		out = append(out, chunk)
 	}
@@ -715,8 +724,12 @@ func (s *Store) replaceOne(workspaceID string, path string, parts replaceParts) 
 	}
 	if len(parts.comms) > 0 || parts.commsSet {
 		deleteCommentDocs(batch, workspaceID, path, old.CommentCount)
-		meta.CommentCount = len(parts.comms)
-		indexComments(batch, workspaceID, path, parts.comms)
+		if bleveIndexComments {
+			meta.CommentCount = len(parts.comms)
+			indexComments(batch, workspaceID, path, parts.comms)
+		} else {
+			meta.CommentCount = 0
+		}
 	}
 	if err := s.idx.Batch(batch); err != nil {
 		return err
@@ -756,8 +769,12 @@ func buildMapping() mapping.IndexMapping {
 
 	text := bleve.NewTextFieldMapping()
 	text.Analyzer = "standard"
-	text.Store = true
+	text.Store = false
 	text.Index = true
+
+	storedText := bleve.NewTextFieldMapping()
+	storedText.Store = true
+	storedText.Index = false
 
 	num := bleve.NewNumericFieldMapping()
 	num.Store = true
@@ -768,12 +785,11 @@ func buildMapping() mapping.IndexMapping {
 	doc.AddFieldMappingsAt("workspace_id", keyword)
 	doc.AddFieldMappingsAt("path", keyword)
 	doc.AddFieldMappingsAt("kind", keyword)
-	doc.AddFieldMappingsAt("title", text)
 	doc.AddFieldMappingsAt("text", text)
-	doc.AddFieldMappingsAt("name", text)
-	doc.AddFieldMappingsAt("container", text)
+	doc.AddFieldMappingsAt("name", storedText)
+	doc.AddFieldMappingsAt("container", storedText)
 	doc.AddFieldMappingsAt("lang", keyword)
-	doc.AddFieldMappingsAt("signature", text)
+	doc.AddFieldMappingsAt("signature", storedText)
 	doc.AddFieldMappingsAt("sl", num)
 	doc.AddFieldMappingsAt("sc", num)
 	doc.AddFieldMappingsAt("el", num)
@@ -797,14 +813,17 @@ func indexDocs(batch *bleve.Batch, workspaceID string, plan store.FilePlan) {
 
 func indexChunks(batch *bleve.Batch, workspaceID string, path string, chunks []store.ChunkInput) {
 	for i, c := range chunks {
+		kind := strings.TrimSpace(c.Kind)
+		if kind == "" {
+			kind = "chunk"
+		}
 		doc := map[string]any{
 			"doc_type":     docTypeChunk,
 			"workspace_id": workspaceID,
 			"path":         path,
 			"sl":           c.SL,
 			"el":           c.EL,
-			"kind":         strings.TrimSpace(c.Kind),
-			"title":        strings.TrimSpace(c.Title),
+			"kind":         kind,
 			"text":         c.Text,
 		}
 		batch.Index(chunkDocID(workspaceID, path, i), doc)
@@ -844,6 +863,9 @@ func indexSymbols(batch *bleve.Batch, workspaceID string, path string, syms []st
 }
 
 func indexComments(batch *bleve.Batch, workspaceID string, path string, comms []store.CommentInput) {
+	if !bleveIndexComments {
+		return
+	}
 	for i, comm := range comms {
 		doc := map[string]any{
 			"doc_type":     docTypeComment,
@@ -883,6 +905,51 @@ func deleteCommentDocs(batch *bleve.Batch, workspaceID string, path string, coun
 	for i := 0; i < count; i++ {
 		batch.Delete(commentDocID(workspaceID, path, i))
 	}
+}
+
+func readChunkText(root string, rel string, sl int, el int, cache map[string][]string) string {
+	if sl <= 0 || el <= 0 || el < sl {
+		return ""
+	}
+	if cache == nil {
+		cache = map[string][]string{}
+	}
+	rel = filepath.ToSlash(rel)
+	lines, ok := cache[rel]
+	if !ok {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		b, err := os.ReadFile(full)
+		if err != nil {
+			cache[rel] = nil
+			return ""
+		}
+		lines = splitLines(string(b))
+		cache[rel] = lines
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	if sl < 1 {
+		sl = 1
+	}
+	if el > len(lines) {
+		el = len(lines)
+	}
+	if el < sl {
+		return ""
+	}
+	return strings.Join(lines[sl-1:el], "\n")
+}
+
+func splitLines(text string) []string {
+	if text == "" {
+		return nil
+	}
+	parts := strings.Split(text, "\n")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	return parts
 }
 
 func chunkDocID(workspaceID string, path string, idx int) string {
