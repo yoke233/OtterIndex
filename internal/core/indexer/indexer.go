@@ -513,18 +513,39 @@ func PrepareUpdatePlan(root string, rel string, opts Options, old *sqlite.File, 
 }
 
 func ApplyUpdatePlan(s *sqlite.Store, workspaceID string, plan UpdatePlan, ex explain.Explain) error {
-	if plan.Skip {
+	return ApplyUpdatePlansBatch(s, workspaceID, []UpdatePlan{plan}, ex)
+}
+
+func ApplyUpdatePlansBatch(s *sqlite.Store, workspaceID string, plans []UpdatePlan, ex explain.Explain) error {
+	if len(plans) == 0 {
 		return nil
 	}
-	if plan.Delete {
-		return s.DeleteFileAll(workspaceID, plan.Rel)
+
+	batch := make([]sqlite.FilePlan, 0, len(plans))
+	for _, plan := range plans {
+		if plan.Skip {
+			continue
+		}
+		batch = append(batch, sqlite.FilePlan{
+			Path:   plan.Rel,
+			Size:   plan.Size,
+			MTime:  plan.MTime,
+			Hash:   plan.Hash,
+			Chunks: plan.Chunks,
+			Syms:   plan.Syms,
+			Comms:  plan.Comms,
+			Delete: plan.Delete,
+		})
+	}
+	if len(batch) == 0 {
+		return nil
 	}
 
 	stopWrite := func() {}
 	if ex != nil {
-		stopWrite = ex.Timer("write_one")
+		stopWrite = ex.Timer("write_batch")
 	}
-	err := s.ReplaceFileAll(workspaceID, plan.Rel, plan.Size, plan.MTime, plan.Hash, plan.Chunks, plan.Syms, plan.Comms)
+	err := s.ReplaceFilesBatch(workspaceID, batch)
 	stopWrite()
 	return err
 }

@@ -163,3 +163,26 @@ Timings (ms):
 - query: 584.84
 - watch.start(sync_on_start): 676.48
 - watch.update+query: 2,524.22
+## PaddleOCR (default, priority+batch+dynamic queue)
+Dataset:
+- Files: 1,934
+- Size: 1,814,850,288 bytes
+
+Timings (ms):
+- ping: 9.51
+- index.build: 2,265.47
+- query: 470.38
+- watch.start(sync_on_start): 716.68
+- watch.update+query: 3,260.35
+
+## PaddleOCR (adaptive debounce 50-500, priority+batch+dynamic queue)
+Dataset:
+- Files: 1,934
+- Size: 1,844,332,656 bytes
+
+Timings (ms):
+- ping: 9.20
+- index.build: 2,151.57
+- query: 520.48
+- watch.start(sync_on_start): 700.57
+- watch.update+query: 3,701.57

@@ -632,11 +632,12 @@ type updateQueue struct {
 	flushEvery time.Duration
 	maxBatch   int
 
-	mu      sync.Mutex
-	pending map[string]struct{}
-	ch      chan []string
-	done    chan struct{}
-	wg      sync.WaitGroup
+	mu        sync.Mutex
+	pending   map[string]struct{}
+	ch        chan []string
+	done      chan struct{}
+	wg        sync.WaitGroup
+	lastFlush time.Time
 }
 
 func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts indexer.Options) *updateQueue {
@@ -691,12 +692,18 @@ func (q *updateQueue) run() {
 		return
 	}
 
-	ticker := time.NewTicker(q.flushEvery)
+	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
-	flush := func() {
+	flush := func(force bool) {
 		q.mu.Lock()
-		if len(q.pending) == 0 {
+		n := len(q.pending)
+		if n == 0 {
+			q.mu.Unlock()
+			return
+		}
+		interval, maxBatch := q.desired(n)
+		if !force && time.Since(q.lastFlush) < interval {
 			q.mu.Unlock()
 			return
 		}
@@ -705,30 +712,98 @@ func (q *updateQueue) run() {
 			paths = append(paths, p)
 		}
 		q.pending = map[string]struct{}{}
+		q.lastFlush = time.Now()
 		q.mu.Unlock()
 
-		for _, rel := range paths {
-			_ = indexer.UpdateFileWithStore(store, q.rootAbs, rel, q.opts, nil, false)
+		ordered := q.prioritize(paths)
+		batch := make([]indexer.UpdatePlan, 0, maxBatch)
+		for _, rel := range ordered {
+			meta, ok, err := store.GetFileMeta(q.workspaceID, rel)
+			if err != nil {
+				continue
+			}
+			var plan indexer.UpdatePlan
+			if ok {
+				plan, err = indexer.PrepareUpdatePlan(q.rootAbs, rel, q.opts, &meta, true)
+			} else {
+				plan, err = indexer.PrepareUpdatePlan(q.rootAbs, rel, q.opts, nil, false)
+			}
+			if err != nil || plan.Skip {
+				continue
+			}
+			batch = append(batch, plan)
+			if len(batch) >= maxBatch {
+				_ = indexer.ApplyUpdatePlansBatch(store, q.workspaceID, batch, nil)
+				batch = batch[:0]
+			}
+		}
+		if len(batch) > 0 {
+			_ = indexer.ApplyUpdatePlansBatch(store, q.workspaceID, batch, nil)
 		}
 	}
 
 	for {
 		select {
 		case <-q.done:
-			flush()
+			flush(true)
 			return
 		case paths := <-q.ch:
 			q.mu.Lock()
 			for _, p := range paths {
 				q.pending[p] = struct{}{}
 			}
-			needFlush := len(q.pending) >= q.maxBatch
+			n := len(q.pending)
 			q.mu.Unlock()
-			if needFlush {
-				flush()
+			_, maxBatch := q.desired(n)
+			if n >= maxBatch {
+				flush(true)
 			}
 		case <-ticker.C:
-			flush()
+			flush(false)
 		}
 	}
+}
+
+func (q *updateQueue) desired(n int) (time.Duration, int) {
+	switch {
+	case n <= 50:
+		return 50 * time.Millisecond, 256
+	case n <= 200:
+		return 100 * time.Millisecond, 512
+	case n <= 1000:
+		return 200 * time.Millisecond, 1024
+	default:
+		return 400 * time.Millisecond, 2048
+	}
+}
+
+func (q *updateQueue) prioritize(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	small := make([]string, 0, len(paths))
+	medium := make([]string, 0, len(paths))
+	large := make([]string, 0, len(paths))
+	for _, rel := range paths {
+		full := filepath.Join(q.rootAbs, filepath.FromSlash(rel))
+		st, err := os.Stat(full)
+		if err != nil {
+			small = append(small, rel)
+			continue
+		}
+		size := st.Size()
+		switch {
+		case size < 64*1024:
+			small = append(small, rel)
+		case size < 1024*1024:
+			medium = append(medium, rel)
+		default:
+			large = append(large, rel)
+		}
+	}
+	out := make([]string, 0, len(paths))
+	out = append(out, small...)
+	out = append(out, medium...)
+	out = append(out, large...)
+	return out
 }
