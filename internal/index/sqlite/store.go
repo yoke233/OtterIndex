@@ -217,6 +217,41 @@ func (s *Store) GetFileMeta(workspaceID string, path string) (File, bool, error)
 	return f, true, nil
 }
 
+func (s *Store) ListFilesMeta(workspaceID string) (map[string]File, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("store is not open")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspaceID is required")
+	}
+
+	rows, err := s.db.Query(
+		`SELECT path, size, mtime, hash
+		 FROM files
+		 WHERE workspace_id = ?`,
+		workspaceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]File{}
+	for rows.Next() {
+		var f File
+		f.WorkspaceID = workspaceID
+		if err := rows.Scan(&f.Path, &f.Size, &f.MTime, &f.Hash); err != nil {
+			return nil, err
+		}
+		out[f.Path] = f
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *Store) DeleteFile(workspaceID string, path string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("store is not open")

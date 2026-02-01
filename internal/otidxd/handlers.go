@@ -424,6 +424,26 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
 		}
 	}
 
+	s, err := sqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	workspaceID := strings.TrimSpace(opts.WorkspaceID)
+	if workspaceID == "" {
+		workspaceID = rootAbs
+	}
+
+	if err := s.EnsureWorkspace(workspaceID, rootAbs); err != nil {
+		return err
+	}
+
+	dbMeta, err := s.ListFilesMeta(workspaceID)
+	if err != nil {
+		return err
+	}
+
 	files, err := walk.ListFiles(rootAbs, walk.Options{
 		IncludeGlobs: opts.IncludeGlobs,
 		ExcludeGlobs: opts.ExcludeGlobs,
@@ -436,6 +456,27 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
 	workers := runtime.NumCPU() / 2
 	if workers < 1 {
 		workers = 1
+	}
+
+	fileSet := map[string]bool{}
+	for _, rel := range files {
+		fileSet[rel] = true
+	}
+
+	var deleted []string
+	for rel := range dbMeta {
+		if !fileSet[rel] {
+			deleted = append(deleted, rel)
+		}
+	}
+
+	for _, rel := range deleted {
+		if isDBRel(rel, dbRel) {
+			continue
+		}
+		if err := deleteFileWithStore(s, workspaceID, rel); err != nil {
+			return err
+		}
 	}
 
 	jobs := make(chan string)
@@ -454,6 +495,16 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			workerStore, err := sqlite.Open(dbPath)
+			if err != nil {
+				setErr(err)
+				return
+			}
+			defer workerStore.Close()
+			if err := workerStore.EnsureWorkspace(workspaceID, rootAbs); err != nil {
+				setErr(err)
+				return
+			}
 			for rel := range jobs {
 				if firstErr != nil {
 					continue
@@ -461,7 +512,13 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
 				if isDBRel(rel, dbRel) {
 					continue
 				}
-				if err := indexer.UpdateFile(rootAbs, dbPath, rel, opts); err != nil {
+				if meta, ok := dbMeta[rel]; ok {
+					if err := indexer.UpdateFileWithStore(workerStore, rootAbs, rel, opts, &meta, true); err != nil {
+						setErr(err)
+					}
+					continue
+				}
+				if err := indexer.UpdateFileWithStore(workerStore, rootAbs, rel, opts, nil, false); err != nil {
 					setErr(err)
 				}
 			}
@@ -490,4 +547,19 @@ func isDBRel(rel string, dbRel string) bool {
 	default:
 		return false
 	}
+}
+
+func deleteFileWithStore(s *sqlite.Store, workspaceID string, rel string) error {
+	if s == nil {
+		return fmt.Errorf("store is required")
+	}
+	if err := s.DeleteFile(workspaceID, rel); err != nil {
+		return err
+	}
+	if err := s.ReplaceChunksBatch(workspaceID, rel, nil); err != nil {
+		return err
+	}
+	_ = s.ReplaceSymbolsBatch(workspaceID, rel, nil)
+	_ = s.ReplaceCommentsBatch(workspaceID, rel, nil)
+	return s.BumpVersion(workspaceID)
 }

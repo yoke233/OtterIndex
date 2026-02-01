@@ -360,14 +360,28 @@ feed:
 }
 
 func UpdateFile(root string, dbPath string, rel string, opts Options) error {
+	if strings.TrimSpace(dbPath) == "" {
+		return fmt.Errorf("dbPath is required")
+	}
+
+	s, err := sqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	return UpdateFileWithStore(s, root, rel, opts, nil, false)
+}
+
+func UpdateFileWithStore(s *sqlite.Store, root string, rel string, opts Options, old *sqlite.File, oldOK bool) error {
 	ex := opts.Explain
 
 	root = filepath.Clean(root)
 	if strings.TrimSpace(root) == "" {
 		return fmt.Errorf("root is required")
 	}
-	if strings.TrimSpace(dbPath) == "" {
-		return fmt.Errorf("dbPath is required")
+	if s == nil {
+		return fmt.Errorf("store is required")
 	}
 
 	rel = filepath.ToSlash(strings.TrimSpace(rel))
@@ -394,12 +408,6 @@ func UpdateFile(root string, dbPath string, rel string, opts Options) error {
 		step = chunkLines
 	}
 
-	s, err := sqlite.Open(dbPath)
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-
 	if err := s.EnsureWorkspace(workspaceID, root); err != nil {
 		return err
 	}
@@ -422,11 +430,18 @@ func UpdateFile(root string, dbPath string, rel string, opts Options) error {
 	size := st.Size()
 	mtime := st.ModTime().Unix()
 
-	old, ok, err := s.GetFileMeta(workspaceID, rel)
-	if err != nil {
-		return err
+	var meta sqlite.File
+	var ok bool
+	if oldOK && old != nil {
+		meta = *old
+		ok = true
+	} else {
+		meta, ok, err = s.GetFileMeta(workspaceID, rel)
+		if err != nil {
+			return err
+		}
 	}
-	if ok && old.Size == size && old.MTime == mtime {
+	if ok && meta.Size == size && meta.MTime == mtime {
 		return nil
 	}
 
@@ -445,7 +460,7 @@ func UpdateFile(root string, dbPath string, rel string, opts Options) error {
 	}
 
 	hash := hashText(b)
-	if ok && old.Hash != "" && old.Hash == hash {
+	if ok && meta.Hash != "" && meta.Hash == hash {
 		return nil
 	}
 
