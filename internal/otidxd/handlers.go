@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -737,12 +738,16 @@ type updateQueue struct {
 
 	tuning updateQueueTuning
 
-	mu        sync.Mutex
-	pending   map[string]struct{}
-	ch        chan []string
-	done      chan struct{}
-	wg        sync.WaitGroup
-	lastFlush time.Time
+	mu         sync.Mutex
+	pending    map[string]struct{}
+	hot        map[string]int
+	ch         chan struct{}
+	done       chan struct{}
+	wg         sync.WaitGroup
+	lastFlush  time.Time
+	lastRate   time.Time
+	events     int
+	rateFactor float64
 }
 
 type updateQueueTuning struct {
@@ -767,8 +772,10 @@ func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts inde
 		workspaceID: workspaceID,
 		tuning:      tuning,
 		pending:     map[string]struct{}{},
-		ch:          make(chan []string, 64),
+		hot:         map[string]int{},
+		ch:          make(chan struct{}, 64),
 		done:        make(chan struct{}),
+		rateFactor:  1,
 	}
 	q.wg.Add(1)
 	go q.run()
@@ -779,14 +786,17 @@ func (q *updateQueue) Enqueue(paths []string) {
 	if q == nil || len(paths) == 0 {
 		return
 	}
+	q.mu.Lock()
+	for _, p := range paths {
+		q.pending[p] = struct{}{}
+		q.hot[p]++
+	}
+	q.events += len(paths)
+	q.mu.Unlock()
+
 	select {
-	case q.ch <- paths:
+	case q.ch <- struct{}{}:
 	default:
-		q.mu.Lock()
-		for _, p := range paths {
-			q.pending[p] = struct{}{}
-		}
-		q.mu.Unlock()
 	}
 }
 
@@ -826,14 +836,19 @@ func (q *updateQueue) run() {
 			return
 		}
 		paths := make([]string, 0, len(q.pending))
+		hot := map[string]int{}
 		for p := range q.pending {
 			paths = append(paths, p)
+			if c, ok := q.hot[p]; ok {
+				hot[p] = c
+				delete(q.hot, p)
+			}
 		}
 		q.pending = map[string]struct{}{}
 		q.lastFlush = time.Now()
 		q.mu.Unlock()
 
-		ordered := q.prioritize(paths)
+		ordered := q.prioritize(paths, hot)
 		batch := make([]indexer.UpdatePlan, 0, maxBatch)
 		for _, rel := range ordered {
 			meta, ok, err := store.GetFileMeta(q.workspaceID, rel)
@@ -865,11 +880,9 @@ func (q *updateQueue) run() {
 		case <-q.done:
 			flush(true)
 			return
-		case paths := <-q.ch:
+		case <-q.ch:
+			q.adjustRate()
 			q.mu.Lock()
-			for _, p := range paths {
-				q.pending[p] = struct{}{}
-			}
 			n := len(q.pending)
 			q.mu.Unlock()
 			_, maxBatch := q.desired(n)
@@ -877,52 +890,74 @@ func (q *updateQueue) run() {
 				flush(true)
 			}
 		case <-ticker.C:
+			q.adjustRate()
 			flush(false)
 		}
 	}
 }
 
 func (q *updateQueue) desired(n int) (time.Duration, int) {
+	factor := q.rateFactor
+	if factor <= 0 {
+		factor = 1
+	}
 	switch {
 	case n <= 50:
-		return q.tuning.IntervalSmall, q.tuning.BatchSmall
+		return scaleInterval(q.tuning.IntervalSmall, factor), scaleBatch(q.tuning.BatchSmall, factor)
 	case n <= 200:
-		return q.tuning.IntervalMed, q.tuning.BatchMed
+		return scaleInterval(q.tuning.IntervalMed, factor), scaleBatch(q.tuning.BatchMed, factor)
 	case n <= 1000:
-		return q.tuning.IntervalLarge, q.tuning.BatchLarge
+		return scaleInterval(q.tuning.IntervalLarge, factor), scaleBatch(q.tuning.BatchLarge, factor)
 	default:
-		return q.tuning.IntervalXL, q.tuning.BatchXL
+		return scaleInterval(q.tuning.IntervalXL, factor), scaleBatch(q.tuning.BatchXL, factor)
 	}
 }
 
-func (q *updateQueue) prioritize(paths []string) []string {
+func (q *updateQueue) prioritize(paths []string, hot map[string]int) []string {
 	if len(paths) == 0 {
 		return nil
 	}
-	small := make([]string, 0, len(paths))
-	medium := make([]string, 0, len(paths))
-	large := make([]string, 0, len(paths))
+
+	type item struct {
+		path  string
+		hot   int
+		depth int
+		size  int64
+	}
+
+	items := make([]item, 0, len(paths))
 	for _, rel := range paths {
 		full := filepath.Join(q.rootAbs, filepath.FromSlash(rel))
 		st, err := os.Stat(full)
-		if err != nil {
-			small = append(small, rel)
-			continue
+		size := int64(0)
+		if err == nil {
+			size = st.Size()
 		}
-		size := st.Size()
-		switch {
-		case size < 64*1024:
-			small = append(small, rel)
-		case size < 1024*1024:
-			medium = append(medium, rel)
-		default:
-			large = append(large, rel)
-		}
+		items = append(items, item{
+			path:  rel,
+			hot:   hot[rel],
+			depth: strings.Count(rel, "/"),
+			size:  size,
+		})
 	}
-	out := make([]string, 0, len(paths))
-	out = append(out, small...)
-	out = append(out, medium...)
-	out = append(out, large...)
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].hot != items[j].hot {
+			return items[i].hot > items[j].hot
+		}
+		if items[i].depth != items[j].depth {
+			return items[i].depth < items[j].depth
+		}
+		if items[i].size != items[j].size {
+			return items[i].size < items[j].size
+		}
+		return items[i].path < items[j].path
+	})
+
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.path)
+	}
 	return out
 }
 
@@ -937,4 +972,60 @@ func defaultQueueTuning() updateQueueTuning {
 		BatchLarge:    1024,
 		BatchXL:       2048,
 	}
+}
+
+func (q *updateQueue) adjustRate() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	now := time.Now()
+	if q.lastRate.IsZero() {
+		q.lastRate = now
+		q.events = 0
+		q.rateFactor = 1
+		return
+	}
+	elapsed := now.Sub(q.lastRate)
+	if elapsed < 500*time.Millisecond {
+		return
+	}
+	rate := float64(q.events) / elapsed.Seconds()
+	q.events = 0
+	q.lastRate = now
+
+	switch {
+	case rate < 20:
+		q.rateFactor = 1
+	case rate < 100:
+		q.rateFactor = 1.5
+	case rate < 500:
+		q.rateFactor = 2
+	default:
+		q.rateFactor = 3
+	}
+}
+
+func scaleInterval(d time.Duration, factor float64) time.Duration {
+	if factor <= 1 {
+		return d
+	}
+	out := time.Duration(float64(d) * factor)
+	if out > 2*time.Second {
+		return 2 * time.Second
+	}
+	return out
+}
+
+func scaleBatch(v int, factor float64) int {
+	if v <= 0 {
+		return v
+	}
+	out := int(float64(v) * factor)
+	if out < 32 {
+		return 32
+	}
+	if out > 8192 {
+		return 8192
+	}
+	return out
 }

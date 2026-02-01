@@ -203,3 +203,14 @@ Auto-tune decision:
 - debounce_ms=100, adaptive_debounce=false, debounce_min/max=50/200
 - sync_workers=2
 - queue tuning: smaller batches + shorter intervals
+## PaddleOCR (auto-tuned, dynamic rate + hot/short-path priority)
+Dataset:
+- Files: 1,934
+- Size: 1,903,657,720 bytes
+
+Timings (ms):
+- ping: 9.14
+- index.build: 2,106.54
+- query: 999.82
+- watch.start(sync_on_start): 735.82
+- watch.update+query: 3,805.94
