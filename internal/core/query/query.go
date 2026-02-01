@@ -159,7 +159,7 @@ func queryWithInfo(dbPath string, workspaceID string, q string, opts Options, pr
 		if ex != nil {
 			stopMatch = ex.Timer("match")
 		}
-		items, err = buildItemsFromCandidates(candidates, q, opts, matchCaseInsensitive, pathTopN, ex)
+		items, err = buildItemsFromCandidates(candidates, q, opts, matchCaseInsensitive, pathTopN, wantN, ex)
 		stopMatch()
 		if err != nil {
 			return nil, queryInfo{}, err
@@ -373,8 +373,9 @@ func candidatesFromChunks(chunks []store.Chunk) []candidateRow {
 	return out
 }
 
-func buildItemsFromCandidates(candidates []candidateRow, q string, opts Options, matchCaseInsensitive bool, pathTopN int, ex explain.Explain) ([]model.ResultItem, error) {
+func buildItemsFromCandidates(candidates []candidateRow, q string, opts Options, matchCaseInsensitive bool, pathTopN int, wantN int, ex explain.Explain) ([]model.ResultItem, error) {
 	items := make([]model.ResultItem, 0, len(candidates))
+	seen := map[string]int{}
 	for _, c := range candidates {
 		if len(opts.IncludeGlobs) > 0 && !anyGlobMatch(opts.IncludeGlobs, c.Path) {
 			continue
@@ -450,10 +451,18 @@ func buildItemsFromCandidates(candidates []candidateRow, q string, opts Options,
 		}
 		stopUnitize()
 
+		if pathTopN > 0 {
+			if seen[item.Path] >= pathTopN {
+				continue
+			}
+			seen[item.Path]++
+		}
 		items = append(items, item)
+		if wantN > 0 && len(items) >= wantN {
+			break
+		}
 	}
 
-	items = DedupeByPathTopN(items, pathTopN)
 	return items, nil
 }
 

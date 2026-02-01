@@ -330,7 +330,7 @@ func queryFromCandidates(dbPath string, workspaceID string, q string, opts Optio
 	if ex != nil {
 		stopMatch = ex.Timer("match")
 	}
-	items, err := buildItemsFromCandidates(env.candidates, q, opts, matchCaseInsensitive, pathTopN, ex)
+	items, err := buildItemsFromCandidates(env.candidates, q, opts, matchCaseInsensitive, pathTopN, wantN, ex)
 	stopMatch()
 	if err != nil {
 		return nil, err
