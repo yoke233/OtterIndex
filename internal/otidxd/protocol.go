@@ -51,6 +51,7 @@ type WatchStartParams struct {
 	ScanAll      bool     `json:"scan_all,omitempty"`
 	IncludeGlobs []string `json:"include_globs,omitempty"`
 	ExcludeGlobs []string `json:"exclude_globs,omitempty"`
+	SyncOnStart  bool     `json:"sync_on_start,omitempty"`
 }
 
 type WatchStopParams struct {

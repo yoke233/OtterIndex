@@ -13,6 +13,7 @@ import (
 
 	"otterindex/internal/core/indexer"
 	"otterindex/internal/core/query"
+	"otterindex/internal/core/walk"
 	"otterindex/internal/core/watch"
 	"otterindex/internal/index/sqlite"
 	"otterindex/internal/model"
@@ -238,6 +239,17 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	h.watchers[wsid] = &watcherEntry{w: w, cancel: cancel, done: done}
 	h.mu.Unlock()
 
+	if p.SyncOnStart {
+		if err := syncChangedFiles(ws.root, ws.dbPath, indexer.Options{
+			WorkspaceID:  wsid,
+			ScanAll:      p.ScanAll,
+			IncludeGlobs: p.IncludeGlobs,
+			ExcludeGlobs: p.ExcludeGlobs,
+		}); err != nil {
+			return WatchStatusResult{}, err
+		}
+	}
+
 	return WatchStatusResult{Running: true}, nil
 }
 
@@ -386,4 +398,59 @@ func clampInt(v int, min int, max int) int {
 		return max
 	}
 	return v
+}
+
+func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	rootAbs = filepath.Clean(rootAbs)
+	if strings.TrimSpace(rootAbs) == "" {
+		return fmt.Errorf("root is required")
+	}
+
+	dbAbs := dbPath
+	if !filepath.IsAbs(dbAbs) {
+		if abs, err := filepath.Abs(dbAbs); err == nil {
+			dbAbs = abs
+		}
+	}
+	dbRel := ""
+	if rel, err := filepath.Rel(rootAbs, dbAbs); err == nil {
+		if rel != "." && !strings.HasPrefix(rel, "..") {
+			dbRel = filepath.ToSlash(rel)
+		}
+	}
+
+	files, err := walk.ListFiles(rootAbs, walk.Options{
+		IncludeGlobs: opts.IncludeGlobs,
+		ExcludeGlobs: opts.ExcludeGlobs,
+		ScanAll:      opts.ScanAll,
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, rel := range files {
+		if isDBRel(rel, dbRel) {
+			continue
+		}
+		if err := indexer.UpdateFile(rootAbs, dbPath, rel, opts); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isDBRel(rel string, dbRel string) bool {
+	if dbRel == "" {
+		return false
+	}
+	switch rel {
+	case dbRel, dbRel + "-wal", dbRel + "-shm", dbRel + "-journal":
+		return true
+	default:
+		return false
+	}
 }
