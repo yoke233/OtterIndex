@@ -7,7 +7,9 @@ param(
     [switch]$AdaptiveDebounce,
     [int]$DebounceMinMs = 0,
     [int]$DebounceMaxMs = 0,
-    [int]$SyncWorkers = 0
+    [int]$SyncWorkers = 0,
+    [string]$QueueMode = "",
+    [switch]$NoAutoTune
 )
 
 $ErrorActionPreference = "Stop"
@@ -158,6 +160,8 @@ $client.Connect($listenHost, $listenPort)
         if ($DebounceMinMs -gt 0) { $params.debounce_min_ms = $DebounceMinMs }
         if ($DebounceMaxMs -gt 0) { $params.debounce_max_ms = $DebounceMaxMs }
         if ($SyncWorkers -gt 0) { $params.sync_workers = $SyncWorkers }
+        if (-not [string]::IsNullOrWhiteSpace($QueueMode)) { $params.queue_mode = $QueueMode }
+        if ($NoAutoTune) { $params.auto_tune = $false }
         $resp = Send-Rpc -Writer $writer -Reader $reader -Id $id -Method "watch.start" -Params $params
     }).TotalMilliseconds
     $id++

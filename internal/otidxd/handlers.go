@@ -227,19 +227,38 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}
 	h.mu.Unlock()
 
-	tuning, autoDebounce, err := autoTuneWatch(ws.dbPath, wsid)
-	if err != nil {
-		return WatchStatusResult{}, err
+	autoEnabled := true
+	if p.AutoTune != nil && !*p.AutoTune {
+		autoEnabled = false
 	}
 
-	autoParams := applyAutoParams(p, autoDebounce)
+	tuning := defaultQueueTuning()
+	autoParams := watchAutoParams{
+		DebounceMS:       0,
+		AdaptiveDebounce: true,
+		DebounceMinMS:    50,
+		DebounceMaxMS:    500,
+		SyncWorkers:      0,
+		QueueMode:        "simple",
+		AutoTune:         true,
+	}
+
+	if autoEnabled {
+		var err error
+		tuning, autoParams, err = autoTuneWatch(ws.dbPath, wsid)
+		if err != nil {
+			return WatchStatusResult{}, err
+		}
+	}
+
+	autoParams = applyAutoParams(p, autoParams)
 
 	uq := newUpdateQueue(rootAbs, ws.dbPath, wsid, indexer.Options{
 		WorkspaceID:  wsid,
 		ScanAll:      p.ScanAll,
 		IncludeGlobs: p.IncludeGlobs,
 		ExcludeGlobs: p.ExcludeGlobs,
-	}, tuning)
+	}, tuning, autoParams.QueueMode)
 
 	w, err := watch.NewWatcherWithOptions(ws.root, ws.dbPath, indexer.Options{
 		WorkspaceID:  wsid,
@@ -638,10 +657,31 @@ type watchAutoParams struct {
 	DebounceMaxMS    int
 	SyncWorkers      int
 	SyncOnStart      bool
+	QueueMode        string
+	AutoTune         bool
 }
 
 func applyAutoParams(p WatchStartParams, auto watchAutoParams) watchAutoParams {
-	out := auto
+	base := watchAutoParams{
+		DebounceMS:       200,
+		AdaptiveDebounce: false,
+		DebounceMinMS:    50,
+		DebounceMaxMS:    500,
+		SyncWorkers:      0,
+		QueueMode:        "simple",
+		AutoTune:         true,
+	}
+
+	useAuto := true
+	if p.AutoTune != nil && !*p.AutoTune {
+		useAuto = false
+	}
+
+	out := base
+	if useAuto {
+		out = auto
+	}
+
 	out.SyncOnStart = p.SyncOnStart
 	if p.DebounceMS > 0 {
 		out.DebounceMS = p.DebounceMS
@@ -659,6 +699,9 @@ func applyAutoParams(p WatchStartParams, auto watchAutoParams) watchAutoParams {
 	if p.SyncWorkers > 0 {
 		out.SyncWorkers = p.SyncWorkers
 	}
+	if mode := normalizeQueueMode(p.QueueMode); mode != "" {
+		out.QueueMode = mode
+	}
 	return out
 }
 
@@ -670,6 +713,8 @@ func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchA
 		DebounceMinMS:    50,
 		DebounceMaxMS:    500,
 		SyncWorkers:      0,
+		QueueMode:        "simple",
+		AutoTune:         true,
 	}
 
 	s, err := sqlite.Open(dbPath)
@@ -696,6 +741,7 @@ func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchA
 		if auto.SyncWorkers == 0 {
 			auto.SyncWorkers = 2
 		}
+		auto.QueueMode = "simple"
 		tuning = updateQueueTuning{
 			IntervalSmall: 40 * time.Millisecond,
 			IntervalMed:   60 * time.Millisecond,
@@ -713,6 +759,7 @@ func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchA
 		if auto.SyncWorkers == 0 {
 			auto.SyncWorkers = 0
 		}
+		auto.QueueMode = "priority"
 		tuning = updateQueueTuning{
 			IntervalSmall: 80 * time.Millisecond,
 			IntervalMed:   150 * time.Millisecond,
@@ -724,6 +771,7 @@ func autoTuneWatch(dbPath string, workspaceID string) (updateQueueTuning, watchA
 			BatchXL:       4096,
 		}
 	default:
+		auto.QueueMode = "simple"
 		tuning = defaultQueueTuning()
 	}
 
@@ -735,6 +783,7 @@ type updateQueue struct {
 	dbPath      string
 	opts        indexer.Options
 	workspaceID string
+	mode        string
 
 	tuning updateQueueTuning
 
@@ -761,21 +810,29 @@ type updateQueueTuning struct {
 	BatchXL       int
 }
 
-func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts indexer.Options, tuning updateQueueTuning) *updateQueue {
+func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts indexer.Options, tuning updateQueueTuning, mode string) *updateQueue {
 	if tuning.IntervalSmall <= 0 {
 		tuning = defaultQueueTuning()
+	}
+	mode = normalizeQueueMode(mode)
+	if mode == "" {
+		mode = "simple"
 	}
 	q := &updateQueue{
 		rootAbs:     rootAbs,
 		dbPath:      dbPath,
 		opts:        opts,
 		workspaceID: workspaceID,
+		mode:        mode,
 		tuning:      tuning,
 		pending:     map[string]struct{}{},
 		hot:         map[string]int{},
 		ch:          make(chan struct{}, 64),
 		done:        make(chan struct{}),
 		rateFactor:  1,
+	}
+	if mode != "priority" {
+		q.hot = nil
 	}
 	q.wg.Add(1)
 	go q.run()
@@ -789,7 +846,9 @@ func (q *updateQueue) Enqueue(paths []string) {
 	q.mu.Lock()
 	for _, p := range paths {
 		q.pending[p] = struct{}{}
-		q.hot[p]++
+		if q.hot != nil {
+			q.hot[p]++
+		}
 	}
 	q.events += len(paths)
 	q.mu.Unlock()
@@ -839,9 +898,11 @@ func (q *updateQueue) run() {
 		hot := map[string]int{}
 		for p := range q.pending {
 			paths = append(paths, p)
-			if c, ok := q.hot[p]; ok {
-				hot[p] = c
-				delete(q.hot, p)
+			if q.hot != nil {
+				if c, ok := q.hot[p]; ok {
+					hot[p] = c
+					delete(q.hot, p)
+				}
 			}
 		}
 		q.pending = map[string]struct{}{}
@@ -933,26 +994,42 @@ func (q *updateQueue) prioritize(paths []string, hot map[string]int) []string {
 		if err == nil {
 			size = st.Size()
 		}
+		hotCount := 0
+		if hot != nil {
+			hotCount = hot[rel]
+		}
 		items = append(items, item{
 			path:  rel,
-			hot:   hot[rel],
+			hot:   hotCount,
 			depth: strings.Count(rel, "/"),
 			size:  size,
 		})
 	}
 
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].hot != items[j].hot {
-			return items[i].hot > items[j].hot
-		}
-		if items[i].depth != items[j].depth {
-			return items[i].depth < items[j].depth
-		}
-		if items[i].size != items[j].size {
-			return items[i].size < items[j].size
-		}
-		return items[i].path < items[j].path
-	})
+	if q.mode == "priority" {
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].hot != items[j].hot {
+				return items[i].hot > items[j].hot
+			}
+			if items[i].depth != items[j].depth {
+				return items[i].depth < items[j].depth
+			}
+			if items[i].size != items[j].size {
+				return items[i].size < items[j].size
+			}
+			return items[i].path < items[j].path
+		})
+	} else {
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].size != items[j].size {
+				return items[i].size < items[j].size
+			}
+			if items[i].depth != items[j].depth {
+				return items[i].depth < items[j].depth
+			}
+			return items[i].path < items[j].path
+		})
+	}
 
 	out := make([]string, 0, len(items))
 	for _, it := range items {
@@ -971,6 +1048,19 @@ func defaultQueueTuning() updateQueueTuning {
 		BatchMed:      512,
 		BatchLarge:    1024,
 		BatchXL:       2048,
+	}
+}
+
+func normalizeQueueMode(mode string) string {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "simple":
+		return "simple"
+	case "priority":
+		return "priority"
+	case "":
+		return ""
+	default:
+		return ""
 	}
 }
 

@@ -292,12 +292,14 @@ go run ./cmd/otidxd -listen 127.0.0.1:7337
 - `query`（`workspace_id/q` 必填，`unit/limit/offset/context_lines/case_insensitive/include_globs/exclude_globs/show` 可选）
   - 默认：`unit=block`，`limit=20`，`offset=0`，`context_lines=0`，`show=false`
   - `show=true` 会附加 `ResultItem.text`
-- `watch.start` / `watch.stop` / `watch.status`（`workspace_id` 必填，可选 `scan_all/include_globs/exclude_globs/sync_on_start/debounce_ms/sync_workers/adaptive_debounce/debounce_min_ms/debounce_max_ms`）
+- `watch.start` / `watch.stop` / `watch.status`（`workspace_id` 必填，可选 `scan_all/include_globs/exclude_globs/sync_on_start/debounce_ms/sync_workers/adaptive_debounce/debounce_min_ms/debounce_max_ms/queue_mode/auto_tune`）
   - 返回 `{ "running": true|false }`
   - `sync_on_start=true` 会在启动时做一次“全目录遍历 + 仅更新变更文件”的补扫（默认并发为 CPU 核心数的一半）
   - `debounce_ms` 控制 watcher 防抖延迟（默认 200ms）
   - `sync_workers` 控制补扫并发数（默认 CPU 核心数的一半）
   - `adaptive_debounce=true` 时根据变更量动态调整防抖（默认区间 50-500ms，可用 `debounce_min_ms/debounce_max_ms` 覆盖）
+  - `queue_mode` 可选 `auto|simple|priority`（默认 auto），控制更新队列策略
+  - `auto_tune=false` 禁用自动调参（默认启用）
   - 若未显式传入上述参数，server 会根据现有索引的文件统计自动调参（大文件仓库倾向较低防抖与小批次）
 
 示例请求/响应：

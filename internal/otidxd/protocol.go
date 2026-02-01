@@ -57,6 +57,8 @@ type WatchStartParams struct {
 	AdaptiveDebounce bool     `json:"adaptive_debounce,omitempty"`
 	DebounceMinMS    int      `json:"debounce_min_ms,omitempty"`
 	DebounceMaxMS    int      `json:"debounce_max_ms,omitempty"`
+	QueueMode        string   `json:"queue_mode,omitempty"`
+	AutoTune         *bool    `json:"auto_tune,omitempty"`
 }
 
 type WatchStopParams struct {
