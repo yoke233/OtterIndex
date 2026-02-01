@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -432,15 +433,51 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
 		return err
 	}
 
-	for _, rel := range files {
-		if isDBRel(rel, dbRel) {
-			continue
-		}
-		if err := indexer.UpdateFile(rootAbs, dbPath, rel, opts); err != nil {
-			return err
-		}
+	workers := runtime.NumCPU() / 2
+	if workers < 1 {
+		workers = 1
 	}
-	return nil
+
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	var firstErr error
+	var once sync.Once
+
+	setErr := func(err error) {
+		if err == nil {
+			return
+		}
+		once.Do(func() { firstErr = err })
+	}
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for rel := range jobs {
+				if firstErr != nil {
+					continue
+				}
+				if isDBRel(rel, dbRel) {
+					continue
+				}
+				if err := indexer.UpdateFile(rootAbs, dbPath, rel, opts); err != nil {
+					setErr(err)
+				}
+			}
+		}()
+	}
+
+	for _, rel := range files {
+		if firstErr != nil {
+			break
+		}
+		jobs <- rel
+	}
+	close(jobs)
+	wg.Wait()
+
+	return firstErr
 }
 
 func isDBRel(rel string, dbRel string) bool {
