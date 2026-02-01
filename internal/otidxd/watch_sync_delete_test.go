@@ -37,7 +37,7 @@ func TestWatch_SyncOnStartDeletesRemovedFiles(t *testing.T) {
 	}
 
 	var st WatchStatusResult
-	if err := c.call("watch.start", WatchStartParams{WorkspaceID: wsid, SyncOnStart: true}, &st); err != nil {
+	if err := c.call("watch.start", WatchStartParams{WorkspaceID: wsid, SyncOnStart: true, SyncWorkers: 1, DebounceMS: 50}, &st); err != nil {
 		t.Fatalf("watch.start: %v", err)
 	}
 

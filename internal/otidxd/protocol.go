@@ -52,6 +52,8 @@ type WatchStartParams struct {
 	IncludeGlobs []string `json:"include_globs,omitempty"`
 	ExcludeGlobs []string `json:"exclude_globs,omitempty"`
 	SyncOnStart  bool     `json:"sync_on_start,omitempty"`
+	DebounceMS   int      `json:"debounce_ms,omitempty"`
+	SyncWorkers  int      `json:"sync_workers,omitempty"`
 }
 
 type WatchStopParams struct {

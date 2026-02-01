@@ -219,12 +219,12 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 	}
 	h.mu.Unlock()
 
-	w, err := watch.NewWatcher(ws.root, ws.dbPath, indexer.Options{
+	w, err := watch.NewWatcherWithOptions(ws.root, ws.dbPath, indexer.Options{
 		WorkspaceID:  wsid,
 		ScanAll:      p.ScanAll,
 		IncludeGlobs: p.IncludeGlobs,
 		ExcludeGlobs: p.ExcludeGlobs,
-	})
+	}, watch.Options{Debounce: debounceFromParams(p.DebounceMS)})
 	if err != nil {
 		return WatchStatusResult{}, err
 	}
@@ -246,7 +246,7 @@ func (h *Handlers) WatchStart(p WatchStartParams) (WatchStatusResult, error) {
 			ScanAll:      p.ScanAll,
 			IncludeGlobs: p.IncludeGlobs,
 			ExcludeGlobs: p.ExcludeGlobs,
-		}); err != nil {
+		}, p.SyncWorkers); err != nil {
 			return WatchStatusResult{}, err
 		}
 	}
@@ -401,7 +401,7 @@ func clampInt(v int, min int, max int) int {
 	return v
 }
 
-func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
+func syncChangedFiles(root string, dbPath string, opts indexer.Options, workers int) error {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return err
@@ -453,10 +453,7 @@ func syncChangedFiles(root string, dbPath string, opts indexer.Options) error {
 		return err
 	}
 
-	workers := runtime.NumCPU() / 2
-	if workers < 1 {
-		workers = 1
-	}
+	workers = normalizeWorkers(workers)
 
 	fileSet := map[string]bool{}
 	for _, rel := range files {
@@ -562,4 +559,28 @@ func deleteFileWithStore(s *sqlite.Store, workspaceID string, rel string) error 
 	_ = s.ReplaceSymbolsBatch(workspaceID, rel, nil)
 	_ = s.ReplaceCommentsBatch(workspaceID, rel, nil)
 	return s.BumpVersion(workspaceID)
+}
+
+func normalizeWorkers(workers int) int {
+	if workers <= 0 {
+		workers = runtime.NumCPU() / 2
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	max := runtime.NumCPU()
+	if max < 1 {
+		max = 1
+	}
+	if workers > max {
+		workers = max
+	}
+	return workers
+}
+
+func debounceFromParams(ms int) time.Duration {
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }

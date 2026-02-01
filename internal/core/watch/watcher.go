@@ -24,13 +24,22 @@ type Watcher struct {
 	indexerOpts indexer.Options
 	filter      *walk.Filter
 	debouncer   *Debouncer
+	debounce    time.Duration
 
 	watcher   *fsnotify.Watcher
 	closeOnce sync.Once
 	closed    chan struct{}
 }
 
+type Options struct {
+	Debounce time.Duration
+}
+
 func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, error) {
+	return NewWatcherWithOptions(root, dbPath, opts, Options{})
+}
+
+func NewWatcherWithOptions(root string, dbPath string, opts indexer.Options, wopts Options) (*Watcher, error) {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -70,13 +79,19 @@ func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, err
 		return nil, err
 	}
 
+	debounce := wopts.Debounce
+	if debounce <= 0 {
+		debounce = 200 * time.Millisecond
+	}
+
 	w := &Watcher{
 		rootAbs:     rootAbs,
 		dbPath:      dbPath,
 		dbRel:       dbRel,
 		indexerOpts: opts,
 		filter:      filter,
-		debouncer:   NewDebouncer(200 * time.Millisecond),
+		debouncer:   NewDebouncer(debounce),
+		debounce:    debounce,
 		watcher:     fsw,
 		closed:      make(chan struct{}),
 	}
@@ -92,6 +107,13 @@ func NewWatcher(root string, dbPath string, opts indexer.Options) (*Watcher, err
 	}
 
 	return w, nil
+}
+
+func (w *Watcher) Debounce() time.Duration {
+	if w == nil {
+		return 0
+	}
+	return w.debounce
 }
 
 func (w *Watcher) Close() error {
@@ -242,4 +264,3 @@ func (w *Watcher) addDirRecursive(absDir string) error {
 		return w.watcher.Add(p)
 	})
 }
-
