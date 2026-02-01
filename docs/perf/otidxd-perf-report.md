@@ -248,3 +248,14 @@ Timings (ms):
 - query: 1,023.79
 - watch.start(sync_on_start): 758.74
 - watch.update+query: 4,724.01
+## PaddleOCR (auto queue_mode=auto, adaptive runtime switching)
+Dataset:
+- Files: 1,934
+- Size: 2,078,913,272 bytes
+
+Timings (ms):
+- ping: 9.78
+- index.build: 3,092.78
+- query: 1,105.26
+- watch.start(sync_on_start): 766.53
+- watch.update+query: 4,080.35

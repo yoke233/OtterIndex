@@ -822,6 +822,7 @@ type updateQueue struct {
 	opts        indexer.Options
 	workspaceID string
 	mode        string
+	modeAuto    bool
 
 	tuning      updateQueueTuning
 	rateEnabled bool
@@ -857,12 +858,18 @@ func newUpdateQueue(rootAbs string, dbPath string, workspaceID string, opts inde
 	if mode == "" {
 		mode = "simple"
 	}
+	modeAuto := false
+	if mode == "auto" {
+		mode = "simple"
+		modeAuto = true
+	}
 	q := &updateQueue{
 		rootAbs:     rootAbs,
 		dbPath:      dbPath,
 		opts:        opts,
 		workspaceID: workspaceID,
 		mode:        mode,
+		modeAuto:    modeAuto,
 		tuning:      tuning,
 		rateEnabled: mode == "priority",
 		pending:     map[string]struct{}{},
@@ -949,7 +956,8 @@ func (q *updateQueue) run() {
 		q.lastFlush = time.Now()
 		q.mu.Unlock()
 
-		ordered := q.prioritize(paths, hot)
+		ordered, avgSize := q.prioritize(paths, hot)
+		q.adjustMode(n, avgSize)
 		batch := make([]indexer.UpdatePlan, 0, maxBatch)
 		for _, rel := range ordered {
 			meta, ok, err := store.GetFileMeta(q.workspaceID, rel)
@@ -1017,9 +1025,9 @@ func (q *updateQueue) desired(n int) (time.Duration, int) {
 	}
 }
 
-func (q *updateQueue) prioritize(paths []string, hot map[string]int) []string {
+func (q *updateQueue) prioritize(paths []string, hot map[string]int) ([]string, int64) {
 	if len(paths) == 0 {
-		return nil
+		return nil, 0
 	}
 
 	type item struct {
@@ -1030,6 +1038,7 @@ func (q *updateQueue) prioritize(paths []string, hot map[string]int) []string {
 	}
 
 	items := make([]item, 0, len(paths))
+	var totalSize int64
 	for _, rel := range paths {
 		full := filepath.Join(q.rootAbs, filepath.FromSlash(rel))
 		st, err := os.Stat(full)
@@ -1037,6 +1046,7 @@ func (q *updateQueue) prioritize(paths []string, hot map[string]int) []string {
 		if err == nil {
 			size = st.Size()
 		}
+		totalSize += size
 		hotCount := 0
 		if hot != nil {
 			hotCount = hot[rel]
@@ -1078,7 +1088,11 @@ func (q *updateQueue) prioritize(paths []string, hot map[string]int) []string {
 	for _, it := range items {
 		out = append(out, it.path)
 	}
-	return out
+	avg := int64(0)
+	if len(items) > 0 {
+		avg = totalSize / int64(len(items))
+	}
+	return out, avg
 }
 
 func defaultQueueTuning() updateQueueTuning {
@@ -1096,6 +1110,8 @@ func defaultQueueTuning() updateQueueTuning {
 
 func normalizeQueueMode(mode string) string {
 	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "auto":
+		return "auto"
 	case "direct":
 		return "direct"
 	case "simple":
@@ -1106,6 +1122,37 @@ func normalizeQueueMode(mode string) string {
 		return ""
 	default:
 		return ""
+	}
+}
+
+func (q *updateQueue) adjustMode(pending int, avgSize int64) {
+	if !q.modeAuto {
+		return
+	}
+	next := q.mode
+	switch {
+	case avgSize > 512*1024:
+		next = "simple"
+	case pending > 500 && avgSize < 128*1024:
+		next = "priority"
+	case pending < 50:
+		next = "simple"
+	}
+	if next == q.mode {
+		return
+	}
+	q.mode = next
+	if next == "priority" {
+		q.rateEnabled = true
+		if q.hot == nil {
+			q.hot = map[string]int{}
+		}
+	} else {
+		q.rateEnabled = false
+		q.rateFactor = 1
+		if q.hot != nil {
+			q.hot = nil
+		}
 	}
 }
 
