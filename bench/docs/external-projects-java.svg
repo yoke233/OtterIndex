@@ -2,54 +2,54 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="820" height="690" viewBox="0 0 820 690">
 <style>text{font-family:Segoe UI, Microsoft YaHei, Arial, sans-serif;}</style>
 <text x="80" y="36" font-size="20" fill="#222">Java / Spring（JeecgBoot - jeecg-boot）</text>
-<text x="80" y="60" font-size="12" fill="#666">2026-02-01 21:25:56 | ripgrep 14.1.1 (rev 4649aa9700)</text>
+<text x="80" y="60" font-size="12" fill="#666">2026-02-02 10:36:06 | ripgrep 14.1.1 (rev 4649aa9700)</text>
 <rect x="560" y="20" width="220" height="44" fill="white" opacity="0.9"/>
 <rect x="568" y="30" width="14" height="14" fill="#4C78A8"/>
 <text x="588" y="42" font-size="12" fill="#222">otidx 查询（扣加载）</text>
 <rect x="672" y="30" width="14" height="14" fill="#F58518"/>
 <text x="692" y="42" font-size="12" fill="#222">rg (ms)</text>
 <rect x="80" y="64" width="700" height="30" fill="white" opacity="0.85"/>
-<text x="82" y="84" font-size="12" fill="#444">加载时间(otidx wall - query): 中位 73ms (min 71 / max 79) | 加载时间(索引构建): 1825ms</text>
+<text x="82" y="84" font-size="12" fill="#444">加载时间(otidx wall - query): 中位 71ms (min 65 / max 74) | 加载时间(索引构建): 1674ms</text>
 <line x1="80" y1="520.00" x2="780" y2="520.00" stroke="#e5e5e5" stroke-width="1"/>
 <text x="70" y="524.00" font-size="11" text-anchor="end" fill="#555">0</text>
-<line x1="80" y1="455.38" x2="780" y2="455.38" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="459.38" font-size="11" text-anchor="end" fill="#555">8</text>
-<line x1="80" y1="382.69" x2="780" y2="382.69" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="386.69" font-size="11" text-anchor="end" fill="#555">17</text>
-<line x1="80" y1="310.00" x2="780" y2="310.00" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="314.00" font-size="11" text-anchor="end" fill="#555">26</text>
-<line x1="80" y1="245.38" x2="780" y2="245.38" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="249.38" font-size="11" text-anchor="end" fill="#555">34</text>
-<line x1="80" y1="172.69" x2="780" y2="172.69" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="176.69" font-size="11" text-anchor="end" fill="#555">43</text>
+<line x1="80" y1="454.12" x2="780" y2="454.12" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="458.12" font-size="11" text-anchor="end" fill="#555">8</text>
+<line x1="80" y1="380.00" x2="780" y2="380.00" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="384.00" font-size="11" text-anchor="end" fill="#555">17</text>
+<line x1="80" y1="314.12" x2="780" y2="314.12" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="318.12" font-size="11" text-anchor="end" fill="#555">25</text>
+<line x1="80" y1="240.00" x2="780" y2="240.00" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="244.00" font-size="11" text-anchor="end" fill="#555">34</text>
+<line x1="80" y1="174.12" x2="780" y2="174.12" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="178.12" font-size="11" text-anchor="end" fill="#555">42</text>
 <line x1="80" y1="100.00" x2="780" y2="100.00" stroke="#e5e5e5" stroke-width="1"/>
-<text x="70" y="104.00" font-size="11" text-anchor="end" fill="#555">52</text>
+<text x="70" y="104.00" font-size="11" text-anchor="end" fill="#555">51</text>
 <line x1="80" y1="520" x2="780" y2="520" stroke="#444" stroke-width="1.2"/>
 <line x1="80" y1="100" x2="80" y2="520" stroke="#444" stroke-width="1.2"/>
-<rect x="103.00" y="471.54" width="42" height="48.46" fill="#4C78A8"/>
-<rect x="155.00" y="156.54" width="42" height="363.46" fill="#F58518"/>
-<text x="124.00" y="465.54" font-size="11" text-anchor="middle" fill="#222">6</text>
-<text x="176.00" y="150.54" font-size="11" text-anchor="middle" fill="#222">45</text>
+<rect x="103.00" y="478.82" width="42" height="41.18" fill="#4C78A8"/>
+<rect x="155.00" y="157.65" width="42" height="362.35" fill="#F58518"/>
+<text x="124.00" y="472.82" font-size="11" text-anchor="middle" fill="#222">5</text>
+<text x="176.00" y="151.65" font-size="11" text-anchor="middle" fill="#222">44</text>
 <text x="150.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 150.00 548.00)">RestController (symbol, fallback)</text>
-<rect x="243.00" y="479.62" width="42" height="40.38" fill="#4C78A8"/>
-<rect x="295.00" y="188.85" width="42" height="331.15" fill="#F58518"/>
-<text x="264.00" y="473.62" font-size="11" text-anchor="middle" fill="#222">5</text>
-<text x="316.00" y="182.85" font-size="11" text-anchor="middle" fill="#222">41</text>
-<text x="290.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 290.00 548.00)">RestController (line)</text>
-<rect x="383.00" y="471.54" width="42" height="48.46" fill="#4C78A8"/>
-<rect x="435.00" y="196.92" width="42" height="323.08" fill="#F58518"/>
-<text x="404.00" y="465.54" font-size="11" text-anchor="middle" fill="#222">6</text>
-<text x="456.00" y="190.92" font-size="11" text-anchor="middle" fill="#222">40</text>
-<text x="430.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 430.00 548.00)">throw new (line)</text>
-<rect x="523.00" y="455.38" width="42" height="64.62" fill="#4C78A8"/>
-<rect x="575.00" y="213.08" width="42" height="306.92" fill="#F58518"/>
-<text x="544.00" y="449.38" font-size="11" text-anchor="middle" fill="#222">8</text>
-<text x="596.00" y="207.08" font-size="11" text-anchor="middle" fill="#222">38</text>
-<text x="570.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 570.00 548.00)">RequestMapping (line)</text>
-<rect x="663.00" y="415.00" width="42" height="105.00" fill="#4C78A8"/>
-<rect x="715.00" y="213.08" width="42" height="306.92" fill="#F58518"/>
-<text x="684.00" y="409.00" font-size="11" text-anchor="middle" fill="#222">13</text>
-<text x="736.00" y="207.08" font-size="11" text-anchor="middle" fill="#222">38</text>
-<text x="710.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 710.00 548.00)">public class (line)</text>
+<rect x="243.00" y="454.12" width="42" height="65.88" fill="#4C78A8"/>
+<rect x="295.00" y="190.59" width="42" height="329.41" fill="#F58518"/>
+<text x="264.00" y="448.12" font-size="11" text-anchor="middle" fill="#222">8</text>
+<text x="316.00" y="184.59" font-size="11" text-anchor="middle" fill="#222">40</text>
+<text x="290.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 290.00 548.00)">RequestMapping (line)</text>
+<rect x="383.00" y="421.18" width="42" height="98.82" fill="#4C78A8"/>
+<rect x="435.00" y="215.29" width="42" height="304.71" fill="#F58518"/>
+<text x="404.00" y="415.18" font-size="11" text-anchor="middle" fill="#222">12</text>
+<text x="456.00" y="209.29" font-size="11" text-anchor="middle" fill="#222">37</text>
+<text x="430.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 430.00 548.00)">public class (line)</text>
+<rect x="523.00" y="462.35" width="42" height="57.65" fill="#4C78A8"/>
+<rect x="575.00" y="215.29" width="42" height="304.71" fill="#F58518"/>
+<text x="544.00" y="456.35" font-size="11" text-anchor="middle" fill="#222">7</text>
+<text x="596.00" y="209.29" font-size="11" text-anchor="middle" fill="#222">37</text>
+<text x="570.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 570.00 548.00)">throw new (line)</text>
+<rect x="663.00" y="487.06" width="42" height="32.94" fill="#4C78A8"/>
+<rect x="715.00" y="223.53" width="42" height="296.47" fill="#F58518"/>
+<text x="684.00" y="481.06" font-size="11" text-anchor="middle" fill="#222">4</text>
+<text x="736.00" y="217.53" font-size="11" text-anchor="middle" fill="#222">36</text>
+<text x="710.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 710.00 548.00)">RestController (line)</text>
 <text x="80" y="662" font-size="11" fill="#666">说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。图中 otidx 为查询耗时（已扣除加载）。</text>
 </svg>

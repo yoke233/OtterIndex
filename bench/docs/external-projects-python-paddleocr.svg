@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="690" viewBox="0 0 820 690">
+<style>text{font-family:Segoe UI, Microsoft YaHei, Arial, sans-serif;}</style>
+<text x="80" y="36" font-size="20" fill="#222">Python/ML（PaddleOCR）</text>
+<text x="80" y="60" font-size="12" fill="#666">2026-02-02 10:36:06 | ripgrep 14.1.1 (rev 4649aa9700)</text>
+<rect x="560" y="20" width="220" height="44" fill="white" opacity="0.9"/>
+<rect x="568" y="30" width="14" height="14" fill="#4C78A8"/>
+<text x="588" y="42" font-size="12" fill="#222">otidx 查询（扣加载）</text>
+<rect x="672" y="30" width="14" height="14" fill="#F58518"/>
+<text x="692" y="42" font-size="12" fill="#222">rg (ms)</text>
+<rect x="80" y="64" width="700" height="30" fill="white" opacity="0.85"/>
+<text x="82" y="84" font-size="12" fill="#444">加载时间(otidx wall - query): 中位 73ms (min 69 / max 74) | 加载时间(索引构建): 2337ms</text>
+<line x1="80" y1="520.00" x2="780" y2="520.00" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="524.00" font-size="11" text-anchor="end" fill="#555">0</text>
+<line x1="80" y1="454.83" x2="780" y2="454.83" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="458.83" font-size="11" text-anchor="end" fill="#555">9</text>
+<line x1="80" y1="382.41" x2="780" y2="382.41" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="386.41" font-size="11" text-anchor="end" fill="#555">19</text>
+<line x1="80" y1="310.00" x2="780" y2="310.00" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="314.00" font-size="11" text-anchor="end" fill="#555">29</text>
+<line x1="80" y1="244.83" x2="780" y2="244.83" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="248.83" font-size="11" text-anchor="end" fill="#555">38</text>
+<line x1="80" y1="172.41" x2="780" y2="172.41" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="176.41" font-size="11" text-anchor="end" fill="#555">48</text>
+<line x1="80" y1="100.00" x2="780" y2="100.00" stroke="#e5e5e5" stroke-width="1"/>
+<text x="70" y="104.00" font-size="11" text-anchor="end" fill="#555">58</text>
+<line x1="80" y1="520" x2="780" y2="520" stroke="#444" stroke-width="1.2"/>
+<line x1="80" y1="100" x2="80" y2="520" stroke="#444" stroke-width="1.2"/>
+<rect x="103.00" y="447.59" width="42" height="72.41" fill="#4C78A8"/>
+<rect x="155.00" y="157.93" width="42" height="362.07" fill="#F58518"/>
+<text x="124.00" y="441.59" font-size="11" text-anchor="middle" fill="#222">10</text>
+<text x="176.00" y="151.93" font-size="11" text-anchor="middle" fill="#222">50</text>
+<text x="150.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 150.00 548.00)">paddle nn (line)</text>
+<rect x="243.00" y="447.59" width="42" height="72.41" fill="#4C78A8"/>
+<rect x="295.00" y="244.83" width="42" height="275.17" fill="#F58518"/>
+<text x="264.00" y="441.59" font-size="11" text-anchor="middle" fill="#222">10</text>
+<text x="316.00" y="238.83" font-size="11" text-anchor="middle" fill="#222">38</text>
+<text x="290.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 290.00 548.00)">import paddle (symbol, fallback)</text>
+<rect x="383.00" y="454.83" width="42" height="65.17" fill="#4C78A8"/>
+<rect x="435.00" y="266.55" width="42" height="253.45" fill="#F58518"/>
+<text x="404.00" y="448.83" font-size="11" text-anchor="middle" fill="#222">9</text>
+<text x="456.00" y="260.55" font-size="11" text-anchor="middle" fill="#222">35</text>
+<text x="430.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 430.00 548.00)">import paddle (line)</text>
+<rect x="523.00" y="360.69" width="42" height="159.31" fill="#4C78A8"/>
+<rect x="575.00" y="281.03" width="42" height="238.97" fill="#F58518"/>
+<text x="544.00" y="354.69" font-size="11" text-anchor="middle" fill="#222">22</text>
+<text x="596.00" y="275.03" font-size="11" text-anchor="middle" fill="#222">33</text>
+<text x="570.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 570.00 548.00)">def (line)</text>
+<rect x="663.00" y="418.62" width="42" height="101.38" fill="#4C78A8"/>
+<rect x="715.00" y="281.03" width="42" height="238.97" fill="#F58518"/>
+<text x="684.00" y="412.62" font-size="11" text-anchor="middle" fill="#222">14</text>
+<text x="736.00" y="275.03" font-size="11" text-anchor="middle" fill="#222">33</text>
+<text x="710.00" y="548.00" font-size="12" text-anchor="end" fill="#222" transform="rotate(25 710.00 548.00)">class (line)</text>
+<text x="80" y="662" font-size="11" fill="#666">说明：otidx 走 SQLite/FTS 索引；rg 为直接扫描文件。图中 otidx 为查询耗时（已扣除加载）。</text>
+</svg>

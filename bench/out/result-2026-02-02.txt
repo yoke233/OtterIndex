@@ -1,0 +1,605 @@
+time: 2026-02-02 10:36:06
+kind: external-projects
+repeat: 3
+build_repeat: 1
+limit: 20
+
+CGO_ENABLED=1
+CC=D:\dev\Scoop\apps\mingw\current\bin\gcc.exe
+CXX=D:\dev\Scoop\apps\mingw\current\bin\g++.exe
+
+rg_version: ripgrep 14.1.1 (rev 4649aa9700)
+
+build_otidx_treesitter_ms: 332
+otidx_exe: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\bin\otidx-ts.exe
+
+--- java-jeecg-boot / index.build ---
+project: java-jeecg-boot
+project_title: Java / Spring（JeecgBoot - jeecg-boot）
+root: D:\project\JeecgBoot\jeecg-boot
+db: .otidx/ext/java-jeecg-boot.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\java-jeecg-boot.db
+wall_ms_min: 1674
+files_total: 981
+files_indexed: 981
+chunks_written: 3381
+symbols_written: 5480
+comments_written: 13848
+treesitter_unsupported: 146
+treesitter_errors: 0
+fts5: True
+fts5_reason: enabled
+ex_elapsed_ms_walk: 109
+ex_elapsed_ms_read_parse: 14496
+ex_elapsed_ms_write: 880
+
+--- java-jeecg-boot / RestController (line) ---
+project: java-jeecg-boot
+project_title: Java / Spring（JeecgBoot - jeecg-boot）
+root: D:\project\JeecgBoot\jeecg-boot
+db: .otidx/ext/java-jeecg-boot.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\java-jeecg-boot.db
+unit: line
+query: RestController
+otidx_wall_ms_min: 71
+otidx_ex_elapsed_ms_total: 4
+otidx_ex_elapsed_ms_sql: 1
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 85
+otidx_items_returned: 20
+rg_wall_ms_min: 36
+rg_lines_returned: 20
+
+--- java-jeecg-boot / RequestMapping (line) ---
+project: java-jeecg-boot
+project_title: Java / Spring（JeecgBoot - jeecg-boot）
+root: D:\project\JeecgBoot\jeecg-boot
+db: .otidx/ext/java-jeecg-boot.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\java-jeecg-boot.db
+unit: line
+query: RequestMapping
+otidx_wall_ms_min: 73
+otidx_ex_elapsed_ms_total: 8
+otidx_ex_elapsed_ms_sql: 4
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 301
+otidx_items_returned: 20
+rg_wall_ms_min: 40
+rg_lines_returned: 20
+
+--- java-jeecg-boot / public class (line) ---
+project: java-jeecg-boot
+project_title: Java / Spring（JeecgBoot - jeecg-boot）
+root: D:\project\JeecgBoot\jeecg-boot
+db: .otidx/ext/java-jeecg-boot.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\java-jeecg-boot.db
+unit: line
+query: public class
+otidx_wall_ms_min: 86
+otidx_ex_elapsed_ms_total: 12
+otidx_ex_elapsed_ms_sql: 9
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 37
+rg_lines_returned: 20
+
+--- java-jeecg-boot / throw new (line) ---
+project: java-jeecg-boot
+project_title: Java / Spring（JeecgBoot - jeecg-boot）
+root: D:\project\JeecgBoot\jeecg-boot
+db: .otidx/ext/java-jeecg-boot.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\java-jeecg-boot.db
+unit: line
+query: throw new
+otidx_wall_ms_min: 78
+otidx_ex_elapsed_ms_total: 7
+otidx_ex_elapsed_ms_sql: 2
+otidx_ex_elapsed_ms_match: 1
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 169
+otidx_items_returned: 20
+rg_wall_ms_min: 37
+rg_lines_returned: 20
+
+--- java-jeecg-boot / RestController (symbol, fallback) ---
+project: java-jeecg-boot
+project_title: Java / Spring（JeecgBoot - jeecg-boot）
+root: D:\project\JeecgBoot\jeecg-boot
+db: .otidx/ext/java-jeecg-boot.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\java-jeecg-boot.db
+unit: symbol
+query: RestController
+otidx_wall_ms_min: 77
+otidx_ex_elapsed_ms_total: 5
+otidx_ex_elapsed_ms_sql: 1
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_symbol: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 85
+otidx_items_returned: 20
+otidx_symbol_fallback: 9
+otidx_unit_fallback: symbol->block
+rg_wall_ms_min: 44
+rg_lines_returned: 20
+
+--- vue-jeecgboot-vue3 / index.build ---
+project: vue-jeecgboot-vue3
+project_title: Vue/TS（JeecgBoot - jeecgboot-vue3）
+root: D:\project\JeecgBoot\jeecgboot-vue3
+db: .otidx/ext/vue-jeecgboot-vue3.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\vue-jeecgboot-vue3.db
+wall_ms_min: 1353
+files_total: 1383
+files_indexed: 1383
+chunks_written: 5050
+symbols_written: 2874
+comments_written: 5631
+treesitter_unsupported: 744
+treesitter_errors: 0
+fts5: True
+fts5_reason: enabled
+ex_elapsed_ms_walk: 38
+ex_elapsed_ms_read_parse: 5705
+ex_elapsed_ms_write: 1070
+
+--- vue-jeecgboot-vue3 / defineComponent (line) ---
+project: vue-jeecgboot-vue3
+project_title: Vue/TS（JeecgBoot - jeecgboot-vue3）
+root: D:\project\JeecgBoot\jeecgboot-vue3
+db: .otidx/ext/vue-jeecgboot-vue3.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\vue-jeecgboot-vue3.db
+unit: line
+query: defineComponent
+otidx_wall_ms_min: 83
+otidx_ex_elapsed_ms_total: 10
+otidx_ex_elapsed_ms_sql: 7
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 489
+otidx_items_returned: 20
+rg_wall_ms_min: 38
+rg_lines_returned: 20
+
+--- vue-jeecgboot-vue3 / export default (line) ---
+project: vue-jeecgboot-vue3
+project_title: Vue/TS（JeecgBoot - jeecgboot-vue3）
+root: D:\project\JeecgBoot\jeecgboot-vue3
+db: .otidx/ext/vue-jeecgboot-vue3.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\vue-jeecgboot-vue3.db
+unit: line
+query: export default
+otidx_wall_ms_min: 85
+otidx_ex_elapsed_ms_total: 12
+otidx_ex_elapsed_ms_sql: 8
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 38
+rg_lines_returned: 20
+
+--- vue-jeecgboot-vue3 / axios (line) ---
+project: vue-jeecgboot-vue3
+project_title: Vue/TS（JeecgBoot - jeecgboot-vue3）
+root: D:\project\JeecgBoot\jeecgboot-vue3
+db: .otidx/ext/vue-jeecgboot-vue3.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\vue-jeecgboot-vue3.db
+unit: line
+query: axios
+otidx_wall_ms_min: 72
+otidx_ex_elapsed_ms_total: 6
+otidx_ex_elapsed_ms_sql: 2
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 135
+otidx_items_returned: 20
+rg_wall_ms_min: 39
+rg_lines_returned: 20
+
+--- vue-jeecgboot-vue3 / router (line) ---
+project: vue-jeecgboot-vue3
+project_title: Vue/TS（JeecgBoot - jeecgboot-vue3）
+root: D:\project\JeecgBoot\jeecgboot-vue3
+db: .otidx/ext/vue-jeecgboot-vue3.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\vue-jeecgboot-vue3.db
+unit: line
+query: router
+otidx_wall_ms_min: 73
+otidx_ex_elapsed_ms_total: 5
+otidx_ex_elapsed_ms_sql: 2
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 173
+otidx_items_returned: 20
+rg_wall_ms_min: 37
+rg_lines_returned: 20
+
+--- vue-jeecgboot-vue3 / defineComponent (symbol, fallback) ---
+project: vue-jeecgboot-vue3
+project_title: Vue/TS（JeecgBoot - jeecgboot-vue3）
+root: D:\project\JeecgBoot\jeecgboot-vue3
+db: .otidx/ext/vue-jeecgboot-vue3.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\vue-jeecgboot-vue3.db
+unit: symbol
+query: defineComponent
+otidx_wall_ms_min: 86
+otidx_ex_elapsed_ms_total: 14
+otidx_ex_elapsed_ms_sql: 10
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_symbol: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 489
+otidx_items_returned: 20
+otidx_symbol_fallback: 20
+otidx_unit_fallback: symbol->block
+rg_wall_ms_min: 38
+rg_lines_returned: 20
+
+--- python-crawl4ai / index.build ---
+project: python-crawl4ai
+project_title: Python（crawl4ai）
+root: D:\project\crawl4ai
+db: .otidx/ext/python-crawl4ai.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-crawl4ai.db
+wall_ms_min: 2137
+files_total: 482
+files_indexed: 482
+chunks_written: 4549
+symbols_written: 3229
+comments_written: 10501
+treesitter_unsupported: 134
+treesitter_errors: 0
+fts5: True
+fts5_reason: enabled
+ex_elapsed_ms_walk: 35
+ex_elapsed_ms_read_parse: 20368
+ex_elapsed_ms_write: 1039
+
+--- python-crawl4ai / async def (line) ---
+project: python-crawl4ai
+project_title: Python（crawl4ai）
+root: D:\project\crawl4ai
+db: .otidx/ext/python-crawl4ai.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-crawl4ai.db
+unit: line
+query: async def
+otidx_wall_ms_min: 95
+otidx_ex_elapsed_ms_total: 23
+otidx_ex_elapsed_ms_sql: 20
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 35
+rg_lines_returned: 20
+
+--- python-crawl4ai / def (line) ---
+project: python-crawl4ai
+project_title: Python（crawl4ai）
+root: D:\project\crawl4ai
+db: .otidx/ext/python-crawl4ai.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-crawl4ai.db
+unit: line
+query: def
+otidx_wall_ms_min: 104
+otidx_ex_elapsed_ms_total: 28
+otidx_ex_elapsed_ms_sql: 25
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 35
+rg_lines_returned: 20
+
+--- python-crawl4ai / class (line) ---
+project: python-crawl4ai
+project_title: Python（crawl4ai）
+root: D:\project\crawl4ai
+db: .otidx/ext/python-crawl4ai.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-crawl4ai.db
+unit: line
+query: class
+otidx_wall_ms_min: 85
+otidx_ex_elapsed_ms_total: 12
+otidx_ex_elapsed_ms_sql: 9
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 33
+rg_lines_returned: 20
+
+--- python-crawl4ai / import (line) ---
+project: python-crawl4ai
+project_title: Python（crawl4ai）
+root: D:\project\crawl4ai
+db: .otidx/ext/python-crawl4ai.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-crawl4ai.db
+unit: line
+query: import
+otidx_wall_ms_min: 89
+otidx_ex_elapsed_ms_total: 20
+otidx_ex_elapsed_ms_sql: 16
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 33
+rg_lines_returned: 20
+
+--- python-crawl4ai / async def (symbol, fallback) ---
+project: python-crawl4ai
+project_title: Python（crawl4ai）
+root: D:\project\crawl4ai
+db: .otidx/ext/python-crawl4ai.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-crawl4ai.db
+unit: symbol
+query: async def
+otidx_wall_ms_min: 93
+otidx_ex_elapsed_ms_total: 27
+otidx_ex_elapsed_ms_sql: 22
+otidx_ex_elapsed_ms_match: 1
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_symbol: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 500
+otidx_items_returned: 20
+otidx_symbol_fallback: 2
+otidx_unit_fallback: symbol->block
+rg_wall_ms_min: 35
+rg_lines_returned: 20
+
+--- python-paddleocr / index.build ---
+project: python-paddleocr
+project_title: Python/ML（PaddleOCR）
+root: D:\project\PaddleOCR
+db: .otidx/ext/python-paddleocr.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-paddleocr.db
+wall_ms_min: 2337
+files_total: 1068
+files_indexed: 1068
+chunks_written: 6424
+symbols_written: 4777
+comments_written: 7365
+treesitter_unsupported: 581
+treesitter_errors: 0
+fts5: True
+fts5_reason: enabled
+ex_elapsed_ms_walk: 40
+ex_elapsed_ms_read_parse: 16830
+ex_elapsed_ms_write: 1366
+
+--- python-paddleocr / import paddle (line) ---
+project: python-paddleocr
+project_title: Python/ML（PaddleOCR）
+root: D:\project\PaddleOCR
+db: .otidx/ext/python-paddleocr.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-paddleocr.db
+unit: line
+query: import paddle
+otidx_wall_ms_min: 80
+otidx_ex_elapsed_ms_total: 9
+otidx_ex_elapsed_ms_sql: 6
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 364
+otidx_items_returned: 20
+rg_wall_ms_min: 35
+rg_lines_returned: 20
+
+--- python-paddleocr / paddle nn (line) ---
+project: python-paddleocr
+project_title: Python/ML（PaddleOCR）
+root: D:\project\PaddleOCR
+db: .otidx/ext/python-paddleocr.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-paddleocr.db
+unit: line
+query: paddle nn
+otidx_wall_ms_min: 84
+otidx_ex_elapsed_ms_total: 10
+otidx_ex_elapsed_ms_sql: 8
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 415
+otidx_items_returned: 20
+rg_wall_ms_min: 50
+rg_lines_returned: 0
+
+--- python-paddleocr / def (line) ---
+project: python-paddleocr
+project_title: Python/ML（PaddleOCR）
+root: D:\project\PaddleOCR
+db: .otidx/ext/python-paddleocr.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-paddleocr.db
+unit: line
+query: def
+otidx_wall_ms_min: 96
+otidx_ex_elapsed_ms_total: 22
+otidx_ex_elapsed_ms_sql: 19
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 33
+rg_lines_returned: 20
+
+--- python-paddleocr / class (line) ---
+project: python-paddleocr
+project_title: Python/ML（PaddleOCR）
+root: D:\project\PaddleOCR
+db: .otidx/ext/python-paddleocr.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-paddleocr.db
+unit: line
+query: class
+otidx_wall_ms_min: 87
+otidx_ex_elapsed_ms_total: 14
+otidx_ex_elapsed_ms_sql: 11
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 33
+rg_lines_returned: 20
+
+--- python-paddleocr / import paddle (symbol, fallback) ---
+project: python-paddleocr
+project_title: Python/ML（PaddleOCR）
+root: D:\project\PaddleOCR
+db: .otidx/ext/python-paddleocr.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\python-paddleocr.db
+unit: symbol
+query: import paddle
+otidx_wall_ms_min: 79
+otidx_ex_elapsed_ms_total: 10
+otidx_ex_elapsed_ms_sql: 6
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_symbol: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 364
+otidx_items_returned: 20
+otidx_symbol_fallback: 15
+otidx_unit_fallback: symbol->block
+rg_wall_ms_min: 38
+rg_lines_returned: 20
+
+--- cpp-gdmplab / index.build ---
+project: cpp-gdmplab
+project_title: C/C++（gdmplab）
+root: D:\project\gdmplab
+db: .otidx/ext/cpp-gdmplab.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\cpp-gdmplab.db
+wall_ms_min: 11086
+files_total: 3569
+files_indexed: 3569
+chunks_written: 12690
+symbols_written: 26971
+comments_written: 22709
+treesitter_unsupported: 41
+treesitter_errors: 0
+fts5: True
+fts5_reason: enabled
+ex_elapsed_ms_walk: 155
+ex_elapsed_ms_read_parse: 119471
+ex_elapsed_ms_write: 4781
+
+--- cpp-gdmplab / include (line) ---
+project: cpp-gdmplab
+project_title: C/C++（gdmplab）
+root: D:\project\gdmplab
+db: .otidx/ext/cpp-gdmplab.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\cpp-gdmplab.db
+unit: line
+query: include
+otidx_wall_ms_min: 96
+otidx_ex_elapsed_ms_total: 22
+otidx_ex_elapsed_ms_sql: 19
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 34
+rg_lines_returned: 20
+
+--- cpp-gdmplab / namespace (line) ---
+project: cpp-gdmplab
+project_title: C/C++（gdmplab）
+root: D:\project\gdmplab
+db: .otidx/ext/cpp-gdmplab.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\cpp-gdmplab.db
+unit: line
+query: namespace
+otidx_wall_ms_min: 98
+otidx_ex_elapsed_ms_total: 22
+otidx_ex_elapsed_ms_sql: 20
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 32
+rg_lines_returned: 20
+
+--- cpp-gdmplab / template (line) ---
+project: cpp-gdmplab
+project_title: C/C++（gdmplab）
+root: D:\project\gdmplab
+db: .otidx/ext/cpp-gdmplab.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\cpp-gdmplab.db
+unit: line
+query: template
+otidx_wall_ms_min: 90
+otidx_ex_elapsed_ms_total: 17
+otidx_ex_elapsed_ms_sql: 14
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 500
+otidx_items_returned: 20
+rg_wall_ms_min: 35
+rg_lines_returned: 20
+
+--- cpp-gdmplab / add_executable (line) ---
+project: cpp-gdmplab
+project_title: C/C++（gdmplab）
+root: D:\project\gdmplab
+db: .otidx/ext/cpp-gdmplab.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\cpp-gdmplab.db
+unit: line
+query: add_executable
+otidx_wall_ms_min: 69
+otidx_ex_elapsed_ms_total: 2
+otidx_ex_elapsed_ms_sql: 0
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_file_read: 0
+otidx_rows_returned: 1
+otidx_items_returned: 1
+rg_wall_ms_min: 52
+rg_lines_returned: 1
+
+--- cpp-gdmplab / include (symbol, fallback) ---
+project: cpp-gdmplab
+project_title: C/C++（gdmplab）
+root: D:\project\gdmplab
+db: .otidx/ext/cpp-gdmplab.db
+db_abs: D:\xyad\worktrees\otidxd-daemon-v1\.otidx\ext\cpp-gdmplab.db
+unit: symbol
+query: include
+otidx_wall_ms_min: 91
+otidx_ex_elapsed_ms_total: 21
+otidx_ex_elapsed_ms_sql: 17
+otidx_ex_elapsed_ms_match: 0
+otidx_ex_elapsed_ms_unitize: 0
+otidx_ex_elapsed_ms_symbol: 0
+otidx_ex_elapsed_ms_file_read: 1
+otidx_rows_returned: 500
+otidx_items_returned: 20
+otidx_symbol_fallback: 20
+otidx_unit_fallback: symbol->block
+rg_wall_ms_min: 33
+rg_lines_returned: 20
+

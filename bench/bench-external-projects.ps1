@@ -326,6 +326,21 @@ $projects = @(
     )
   },
   [pscustomobject]@{
+    Key         = 'python-paddleocr'
+    ChartName   = 'python-paddleocr'
+    Title       = 'Python/ML（PaddleOCR）'
+    Root        = 'D:\project\PaddleOCR'
+    DbPath      = '.otidx/ext/python-paddleocr.db'
+    IncludeGlobs = @('*.py', '*.toml', '*.yml', '*.yaml', '*.md')
+    Cases       = @(
+      [pscustomobject]@{ Name = 'import paddle (line)'; Query = 'import paddle'; Unit = 'line'; Globs = @('*.py') },
+      [pscustomobject]@{ Name = 'paddle nn (line)'; Query = 'paddle nn'; Unit = 'line'; Globs = @('*.py') },
+      [pscustomobject]@{ Name = 'def (line)'; Query = 'def'; Unit = 'line'; Globs = @('*.py') },
+      [pscustomobject]@{ Name = 'class (line)'; Query = 'class'; Unit = 'line'; Globs = @('*.py') },
+      [pscustomobject]@{ Name = 'import paddle (symbol, fallback)'; Query = 'import paddle'; Unit = 'symbol'; Globs = @('*.py') }
+    )
+  },
+  [pscustomobject]@{
     Key         = 'cpp-gdmplab'
     ChartName   = 'cpp'
     Title       = 'C/C++（gdmplab）'
